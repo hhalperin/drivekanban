@@ -1,12 +1,12 @@
 import type {
-	RuntimeAgentId,
-	RuntimeBoardCard,
-	RuntimeBoardColumnId,
-	RuntimeBoardData,
-	RuntimeBoardDependency,
-	RuntimeTaskAutoReviewMode,
-	RuntimeTaskClineSettings,
-	RuntimeTaskImage,
+    RuntimeAgentId,
+    RuntimeBoardCard,
+    RuntimeBoardColumnId,
+    RuntimeBoardData,
+    RuntimeBoardDependency,
+    RuntimeTaskAutoReviewMode,
+    RuntimeTaskClineSettings,
+    RuntimeTaskImage,
 } from "./api-contract";
 import { createUniqueTaskId } from "./task-id";
 import { resolveTaskTitle } from "./task-title";
@@ -22,6 +22,13 @@ export interface RuntimeCreateTaskInput {
 	agentId?: RuntimeAgentId;
 	clineSettings?: RuntimeTaskClineSettings;
 	baseRef: string;
+	/** DrivePlan managed-card identity (ADR-0018). Forces autoReviewEnabled off. */
+	externalRef?: {
+		system: "driveplan";
+		driveTaskId: string;
+		driveRunId: string;
+		workItemId?: string;
+	};
 }
 
 export interface RuntimeUpdateTaskInput {
@@ -299,16 +306,31 @@ export function addTaskToColumn(
 	if (explicitTaskId && existingIds.has(explicitTaskId)) {
 		throw new Error(`Task "${explicitTaskId}" already exists.`);
 	}
+	const managed =
+		input.externalRef?.system === "driveplan" &&
+		typeof input.externalRef.driveTaskId === "string" &&
+		typeof input.externalRef.driveRunId === "string";
+	const externalRef = managed
+		? {
+				system: "driveplan" as const,
+				driveTaskId: input.externalRef!.driveTaskId,
+				driveRunId: input.externalRef!.driveRunId,
+				...(input.externalRef!.workItemId
+					? { workItemId: input.externalRef!.workItemId }
+					: {}),
+			}
+		: undefined;
 	const task: RuntimeBoardCard = {
 		id: explicitTaskId || createUniqueTaskId(existingIds, randomUuid),
 		title: resolveTaskTitle(input.title, prompt),
 		prompt,
 		startInPlanMode: Boolean(input.startInPlanMode),
-		autoReviewEnabled: Boolean(input.autoReviewEnabled),
+		autoReviewEnabled: managed ? false : Boolean(input.autoReviewEnabled),
 		autoReviewMode: normalizeTaskAutoReviewMode(input.autoReviewMode),
 		images: cloneTaskImages(input.images),
 		...(input.agentId ? { agentId: input.agentId } : {}),
 		...(input.clineSettings !== undefined ? { clineSettings: cloneTaskClineSettings(input.clineSettings) } : {}),
+		...(externalRef ? { externalRef } : {}),
 		baseRef,
 		createdAt: now,
 		updatedAt: now,
