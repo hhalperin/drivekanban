@@ -101,6 +101,31 @@ jobs:
           POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
+      # A missing credential makes `notarize.cjs` skip notarization and return
+      # success, so a publishing run would go green and ship a DMG that
+      # Gatekeeper refuses to open. Fail loudly here instead — before a 20
+      # minute build — rather than discovering it from a user report.
+      - name: Verify macOS signing credentials before publishing
+        if: matrix.os == 'macos-latest' && inputs.publish
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=()
+          [ -n "$CSC_LINK" ] || missing+=("MAC_CSC_LINK")
+          [ -n "$APPLE_ID" ] || missing+=("APPLE_ID")
+          [ -n "$APPLE_ID_PASSWORD" ] || missing+=("APPLE_ID_PASSWORD (or APPLE_APP_SPECIFIC_PASSWORD)")
+          [ -n "$APPLE_TEAM_ID" ] || missing+=("APPLE_TEAM_ID")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Publishing a macOS release needs: ${missing[*]}"
+            echo "Without these the build succeeds but ships un-notarized, and macOS refuses to open it."
+            exit 1
+          fi
+          echo "macOS signing credentials present."
+
       - name: Build desktop app
         working-directory: packages/desktop
         shell: bash
@@ -118,7 +143,10 @@ jobs:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          # Must be APPLE_ID_PASSWORD — that is the name `scripts/notarize.cjs`
+          # reads, and it skips notarization *silently* when absent. Accepts
+          # either secret name so an existing APPLE_APP_SPECIFIC_PASSWORD works.
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           # Windows signing.
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
