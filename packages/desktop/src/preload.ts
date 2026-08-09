@@ -5,6 +5,7 @@ import {
 	DESKTOP_BRIDGE_VERSION,
 	type DesktopApi,
 	DesktopChannel,
+	type DesktopMenuAction,
 	type DesktopNotificationRequest,
 	type DesktopPresenceCounts,
 	type DesktopUpdateStatus,
@@ -40,6 +41,25 @@ const desktopApi: DesktopApi = {
 	runtime: {
 		restart(): void {
 			ipcRenderer.send(DesktopChannel.RestartRuntime);
+		},
+	},
+
+	actions: {
+		publish(actions: readonly DesktopMenuAction[]): void {
+			// Copied into a plain array: `contextBridge` cannot clone an
+			// arbitrary readonly view, and a caller's live array could mutate
+			// mid-send.
+			ipcRenderer.send(DesktopChannel.PublishActions, [...actions]);
+		},
+
+		onInvoke(listener: (actionId: string) => void): () => void {
+			const forward = (_event: unknown, actionId: string): void => {
+				listener(actionId);
+			};
+			ipcRenderer.on(DesktopChannel.InvokeAction, forward);
+			return () => {
+				ipcRenderer.off(DesktopChannel.InvokeAction, forward);
+			};
 		},
 	},
 

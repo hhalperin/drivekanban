@@ -9,6 +9,8 @@
 import { DesktopChannel, type DesktopUpdateStatus } from "./contract.js";
 import {
 	emptyPayloadSchema,
+	type MenuActionsPayload,
+	menuActionsPayloadSchema,
 	type NotifyPayload,
 	notifyPayloadSchema,
 	type PresenceCountsPayload,
@@ -39,6 +41,7 @@ export interface DesktopBridgeHandlers {
 	installUpdate(): void;
 	notify(request: NotifyPayload): void;
 	setPresenceCounts(counts: PresenceCountsPayload): void;
+	publishActions(actions: MenuActionsPayload): void;
 }
 
 function warnInvalidPayload(channel: string, error: unknown): void {
@@ -90,6 +93,15 @@ export function registerDesktopBridge(
 			return;
 		}
 		handlers.setPresenceCounts(parsed.data);
+	});
+
+	ipc.on(DesktopChannel.PublishActions, (_event, payload) => {
+		const parsed = menuActionsPayloadSchema.safeParse(payload);
+		if (!parsed.success) {
+			warnInvalidPayload(DesktopChannel.PublishActions, parsed.error);
+			return;
+		}
+		handlers.publishActions(parsed.data);
 	});
 
 	// `handle`, not `on`: the renderer needs the current status synchronously

@@ -50,6 +50,7 @@ export const DESKTOP_CAPABILITIES = [
 	"updates",
 	"notifications",
 	"presence",
+	"actions",
 ] as const;
 
 export type DesktopCapability = (typeof DESKTOP_CAPABILITIES)[number];
@@ -89,8 +90,10 @@ export const DesktopChannel = {
 	InstallUpdate: "desktop:updates:install",
 	Notify: "desktop:notifications:notify",
 	SetPresenceCounts: "desktop:presence:set-counts",
-	/** Main → renderer push. Not accepted as an inbound channel. */
+	PublishActions: "desktop:actions:publish",
+	/** Main → renderer pushes. Not accepted as inbound channels. */
 	UpdateStatusChanged: "desktop:updates:status-changed",
+	InvokeAction: "desktop:actions:invoke",
 } as const;
 
 export type DesktopChannelName =
@@ -195,12 +198,41 @@ export interface DesktopPresenceApi {
 	setCounts(counts: DesktopPresenceCounts): void;
 }
 
+/**
+ * An app action as the shell needs to see it: enough to render a menu item,
+ * and an id to send back when it is chosen. Handlers stay in the renderer,
+ * which owns the domain logic.
+ */
+export interface DesktopMenuAction {
+	readonly id: string;
+	readonly label: string;
+	/** Menu section. Actions sharing a group are rendered together. */
+	readonly group: string;
+	/** `react-hotkeys-hook` syntax; the shell translates it. */
+	readonly accelerator: string | null;
+	readonly enabled: boolean;
+}
+
+export interface DesktopActionsApi {
+	/**
+	 * Replace the shell's menu contents. Sends the full list rather than
+	 * deltas so a dropped message self-corrects on the next publish.
+	 */
+	publish(actions: readonly DesktopMenuAction[]): void;
+	/**
+	 * Called when the user picks one of the published actions from the native
+	 * menu. Returns an unsubscribe function.
+	 */
+	onInvoke(listener: (actionId: string) => void): () => void;
+}
+
 export interface DesktopApi extends DesktopBridgeHandshake {
 	readonly windows: DesktopWindowsApi;
 	readonly runtime: DesktopRuntimeApi;
 	readonly updates: DesktopUpdatesApi;
 	readonly notifications: DesktopNotificationsApi;
 	readonly presence: DesktopPresenceApi;
+	readonly actions: DesktopActionsApi;
 }
 
 /**

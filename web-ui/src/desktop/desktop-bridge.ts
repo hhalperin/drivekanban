@@ -12,6 +12,7 @@
  */
 
 import {
+	type DesktopActionsApi,
 	type DesktopApi,
 	type DesktopCapability,
 	type DesktopNotificationsApi,
@@ -95,6 +96,8 @@ export function createDesktopClient(candidate: unknown): DesktopClient | null {
 	);
 	const notify = readMethod(candidate, "notifications", "notify");
 	const setPresenceCounts = readMethod(candidate, "presence", "setCounts");
+	const publishActions = readMethod(candidate, "actions", "publish");
+	const onInvokeAction = readMethod(candidate, "actions", "onInvoke");
 	const getUpdateStatus = readMethod(candidate, "updates", "getStatus");
 	const checkForUpdates = readMethod(candidate, "updates", "check");
 	const installUpdate = readMethod(candidate, "updates", "install");
@@ -110,6 +113,7 @@ export function createDesktopClient(candidate: unknown): DesktopClient | null {
 	}
 	if (notify && advertised.has("notifications")) effective.add("notifications");
 	if (setPresenceCounts && advertised.has("presence")) effective.add("presence");
+	if (publishActions && onInvokeAction && advertised.has("actions")) effective.add("actions");
 
 	const windows: DesktopWindowsApi = {
 		openProject(projectId) {
@@ -120,6 +124,18 @@ export function createDesktopClient(candidate: unknown): DesktopClient | null {
 	const runtime: DesktopRuntimeApi = {
 		restart() {
 			if (effective.has("runtime")) restart?.();
+		},
+	};
+
+	const actions: DesktopActionsApi = {
+		publish(menuActions) {
+			if (effective.has("actions")) publishActions?.(menuActions as never);
+		},
+
+		onInvoke(listener) {
+			if (!effective.has("actions")) return () => {};
+			const unsubscribe = onInvokeAction?.(listener as never);
+			return typeof unsubscribe === "function" ? (unsubscribe as () => void) : () => {};
 		},
 	};
 
@@ -176,6 +192,7 @@ export function createDesktopClient(candidate: unknown): DesktopClient | null {
 		updates,
 		notifications,
 		presence,
+		actions,
 		has: (capability) => effective.has(capability),
 	};
 }

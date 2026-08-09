@@ -33,6 +33,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { UpdateNotificationController } from "@/components/update-notification-controller";
 import { createInitialBoardData } from "@/data/board-data";
+import { useDesktopMenuActions } from "@/desktop/use-desktop-menu-actions";
 import { usePresenceReporter } from "@/desktop/use-presence-reporter";
 import { createIdleTaskSession } from "@/hooks/app-utils";
 import { KanbanAccessBlockedFallback } from "@/hooks/kanban-access-blocked-fallback";
@@ -638,6 +639,9 @@ export default function App(): ReactElement {
 			canToggleTerminalExpanded: selectedCard ? isDetailTerminalOpen : showHomeBottomTerminal,
 		},
 	);
+
+	// Mirrors the registry into the native menu bar, and runs menu picks.
+	useDesktopMenuActions(appActions);
 
 	useHotkeys(
 		COMMAND_PALETTE_ACCELERATOR,

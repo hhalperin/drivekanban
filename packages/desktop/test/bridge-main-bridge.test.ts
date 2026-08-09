@@ -5,6 +5,7 @@ import {
 	type DesktopUpdateStatus,
 } from "../src/bridge/contract.js";
 import type {
+	MenuActionsPayload,
 	NotifyPayload,
 	PresenceCountsPayload,
 } from "../src/bridge/ipc-schemas.js";
@@ -65,6 +66,7 @@ let handlers: {
 	installUpdate: Mock<() => void>;
 	notify: Mock<(request: NotifyPayload) => void>;
 	setPresenceCounts: Mock<(counts: PresenceCountsPayload) => void>;
+	publishActions: Mock<(actions: MenuActionsPayload) => void>;
 };
 let warn: ReturnType<typeof vi.spyOn>;
 
@@ -78,6 +80,7 @@ beforeEach(() => {
 		installUpdate: vi.fn(),
 		notify: vi.fn(),
 		setPresenceCounts: vi.fn(),
+		publishActions: vi.fn(),
 	};
 	warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 	registerDesktopBridge(ipc, handlers);
@@ -100,6 +103,7 @@ describe("registerDesktopBridge", () => {
 				DesktopChannel.InstallUpdate,
 				DesktopChannel.Notify,
 				DesktopChannel.SetPresenceCounts,
+				DesktopChannel.PublishActions,
 			].sort(),
 		);
 	});
@@ -112,6 +116,7 @@ describe("registerDesktopBridge", () => {
 		// `UpdateStatusChanged` is main → renderer. Accepting it inbound would
 		// let a compromised renderer forge status updates for every window.
 		expect(ipc.channels).not.toContain(DesktopChannel.UpdateStatusChanged);
+		expect(ipc.channels).not.toContain(DesktopChannel.InvokeAction);
 		expect(ipc.invokableChannels).not.toContain(
 			DesktopChannel.UpdateStatusChanged,
 		);

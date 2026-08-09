@@ -119,6 +119,7 @@ const bridgeCapabilities: DesktopCapability[] = [
 	"updates",
 	"notifications",
 	"presence",
+	"actions",
 ];
 
 const bridgeBootstrap: DesktopBridgeBootstrap = {
@@ -143,6 +144,15 @@ const menu = new AppMenu({
 	orchestrator,
 	onNewWindow: ({ initialPath }) =>
 		windowFactory.create({ projectId: null, initialPath }),
+	// Routed to the focused window only. Every window runs its own renderer
+	// with its own project context, and the menu belongs to whichever window
+	// the user was looking at when they opened it.
+	onInvokeAction: (actionId) => {
+		const focused = registry.getFocused();
+		if (focused && !focused.isDestroyed()) {
+			focused.webContents.send(DesktopChannel.InvokeAction, actionId);
+		}
+	},
 });
 
 // macOS can deliver `open-url` events before the runtime is ready (the app
@@ -312,6 +322,8 @@ registerDesktopBridge(ipcMain, {
 	},
 
 	setPresenceCounts: (counts) => presenceController.update(counts),
+
+	publishActions: (actions) => menu.setActions(actions),
 
 	getUpdateStatus: () => updateController.getStatus(),
 	checkForUpdates: () => updateController.check(),

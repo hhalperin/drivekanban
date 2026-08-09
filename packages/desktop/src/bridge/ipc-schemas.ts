@@ -57,6 +57,25 @@ export const presenceCountsPayloadSchema = z.object({
 export type PresenceCountsPayload = z.infer<typeof presenceCountsPayloadSchema>;
 
 /**
+ * Menu contents are bounded: the menu is rebuilt on every publish, and an
+ * unbounded list would let a renderer bug stall the UI thread building
+ * thousands of native menu items.
+ */
+export const menuActionsPayloadSchema = z
+	.array(
+		z.object({
+			id: z.string().trim().min(1).max(100),
+			label: z.string().trim().min(1).max(120),
+			group: z.string().trim().min(1).max(60),
+			accelerator: z.string().trim().min(1).max(60).nullable().catch(null),
+			enabled: z.boolean().catch(false),
+		}),
+	)
+	.max(100);
+
+export type MenuActionsPayload = z.infer<typeof menuActionsPayloadSchema>;
+
+/**
  * Shared by every channel that takes no arguments. Modelled explicitly
  * rather than skipping validation, so a payload-less channel that later
  * grows a payload can't silently start accepting unvalidated input.

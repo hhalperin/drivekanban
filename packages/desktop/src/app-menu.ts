@@ -1,5 +1,7 @@
 import { Menu, app, shell } from "electron";
 
+import type { DesktopMenuAction } from "./bridge/contract.js";
+import { toElectronAccelerator } from "./menu/accelerator.js";
 import type { RuntimeOrchestrator } from "./runtime-orchestrator.js";
 import type { WindowRegistry } from "./window-registry.js";
 import { extractPersistablePath } from "./window-state.js";
@@ -26,10 +28,26 @@ interface AppMenuOptions {
 	registry: WindowRegistry;
 	orchestrator: RuntimeOrchestrator;
 	onNewWindow: (options: { initialPath: string | null }) => void;
+	/** Invoked when the user picks a published app action. */
+	onInvokeAction: (actionId: string) => void;
 }
 
 export class AppMenu {
+	private actions: readonly DesktopMenuAction[] = [];
+
 	constructor(private readonly opts: AppMenuOptions) {}
+
+	/**
+	 * Replace the app-action items and re-render.
+	 *
+	 * The renderer republishes whenever availability changes, so this is
+	 * called often; rebuilding the whole menu is what Electron supports and
+	 * is cheap next to the IPC that carried the list.
+	 */
+	setActions(actions: readonly DesktopMenuAction[]): void {
+		this.actions = actions;
+		this.rebuild();
+	}
 
 	rebuild(): void {
 		Menu.setApplicationMenu(Menu.buildFromTemplate(this.buildTemplate()));
@@ -123,8 +141,51 @@ export class AppMenu {
 
 		const template: Electron.MenuItemConstructorOptions[] = [];
 		if (isMac) template.push(appMenu);
-		template.push(fileMenu, editMenu, viewMenu, this.buildWindowMenu(isMac), helpMenu);
+		template.push(fileMenu, editMenu, viewMenu);
+		// Only rendered once the renderer has published something. An empty
+		// "Commands" menu would be worse than no menu at all.
+		const commandsMenu = this.buildCommandsMenu(ready);
+		if (commandsMenu) template.push(commandsMenu);
+		template.push(this.buildWindowMenu(isMac), helpMenu);
 		return template;
+	}
+
+	/**
+	 * Menu items for the actions the renderer published, grouped in the order
+	 * the groups first appear so the menu matches the command palette.
+	 */
+	private buildCommandsMenu(
+		ready: boolean,
+	): Electron.MenuItemConstructorOptions | null {
+		if (this.actions.length === 0) return null;
+
+		const groups: string[] = [];
+		for (const action of this.actions) {
+			if (!groups.includes(action.group)) groups.push(action.group);
+		}
+
+		const submenu: Electron.MenuItemConstructorOptions[] = [];
+		for (const group of groups) {
+			if (submenu.length > 0) submenu.push({ type: "separator" });
+			for (const action of this.actions.filter((item) => item.group === group)) {
+				const accelerator = toElectronAccelerator(action.accelerator);
+				submenu.push({
+					label: action.label,
+					// The renderer's own hotkey handler also fires on this key.
+					// `registerAccelerator: false` shows the shortcut in the menu
+					// without Electron binding it, so the action runs once rather
+					// than twice.
+					...(accelerator ? { accelerator, registerAccelerator: false } : {}),
+					// A disconnected runtime means there is no renderer to receive
+					// the invoke, so grey the whole set out rather than sending
+					// into the void.
+					enabled: ready && action.enabled,
+					click: () => this.opts.onInvokeAction(action.id),
+				});
+			}
+		}
+
+		return { label: "Commands", submenu };
 	}
 
 	private buildWindowMenu(isMac: boolean): Electron.MenuItemConstructorOptions {
