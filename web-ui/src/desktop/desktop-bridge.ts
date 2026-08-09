@@ -15,6 +15,7 @@ import {
 	type DesktopActionsApi,
 	type DesktopApi,
 	type DesktopCapability,
+	type DesktopDialogsApi,
 	type DesktopNotificationsApi,
 	type DesktopPresenceApi,
 	type DesktopRuntimeApi,
@@ -96,6 +97,7 @@ export function createDesktopClient(candidate: unknown): DesktopClient | null {
 	);
 	const notify = readMethod(candidate, "notifications", "notify");
 	const setPresenceCounts = readMethod(candidate, "presence", "setCounts");
+	const pickDirectory = readMethod(candidate, "dialogs", "pickDirectory");
 	const publishActions = readMethod(candidate, "actions", "publish");
 	const onInvokeAction = readMethod(candidate, "actions", "onInvoke");
 	const getUpdateStatus = readMethod(candidate, "updates", "getStatus");
@@ -114,6 +116,7 @@ export function createDesktopClient(candidate: unknown): DesktopClient | null {
 	if (notify && advertised.has("notifications")) effective.add("notifications");
 	if (setPresenceCounts && advertised.has("presence")) effective.add("presence");
 	if (publishActions && onInvokeAction && advertised.has("actions")) effective.add("actions");
+	if (pickDirectory && advertised.has("dialogs")) effective.add("dialogs");
 
 	const windows: DesktopWindowsApi = {
 		openProject(projectId) {
@@ -124,6 +127,21 @@ export function createDesktopClient(candidate: unknown): DesktopClient | null {
 	const runtime: DesktopRuntimeApi = {
 		restart() {
 			if (effective.has("runtime")) restart?.();
+		},
+	};
+
+	const dialogs: DesktopDialogsApi = {
+		async pickDirectory(options) {
+			if (!effective.has("dialogs")) return null;
+			try {
+				return ((await pickDirectory?.(options as never)) as string | null) ?? null;
+			} catch (error) {
+				// A rejected round-trip means no directory was chosen, which is
+				// exactly what a cancel looks like — the caller's fallback path
+				// handles both identically.
+				console.warn("[desktop] Directory picker failed:", error instanceof Error ? error.message : error);
+				return null;
+			}
 		},
 	};
 
@@ -193,6 +211,7 @@ export function createDesktopClient(candidate: unknown): DesktopClient | null {
 		notifications,
 		presence,
 		actions,
+		dialogs,
 		has: (capability) => effective.has(capability),
 	};
 }

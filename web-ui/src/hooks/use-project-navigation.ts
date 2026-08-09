@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { notifyError, showAppToast } from "@/components/app-toaster";
+import { useDesktopDirectoryPicker } from "@/desktop/use-desktop-directory-picker";
 import { buildProjectPathname, parseProjectIdFromPathname } from "@/hooks/app-utils";
 import { getRuntimeTrpcClient } from "@/runtime/trpc-client";
 import { useRuntimeStateStream } from "@/runtime/use-runtime-state-stream";
@@ -67,6 +68,7 @@ export interface UseProjectNavigationResult {
 }
 
 export function useProjectNavigation({ onProjectSwitchStart }: UseProjectNavigationInput): UseProjectNavigationResult {
+	const pickDesktopDirectory = useDesktopDirectoryPicker();
 	const [requestedProjectId, setRequestedProjectId] = useState<string | null>(() => {
 		if (typeof window === "undefined") {
 			return null;
@@ -116,7 +118,43 @@ export function useProjectNavigation({ onProjectSwitchStart }: UseProjectNavigat
 		[handleSelectProject],
 	);
 
+	// Shared by both picker paths: everything after a directory is chosen.
+	const addProjectAtPath = useCallback(
+		async (path: string) => {
+			const trpcClient = getRuntimeTrpcClient(currentProjectId);
+			const added = await trpcClient.projects.add.mutate({ path });
+			if (!added.ok || !added.project) {
+				if (added.requiresGitInitialization) {
+					// Needs git init — open the dialog with the path pre-filled
+					// so the user can confirm initialization.
+					setPendingGitInitPath(path);
+					setIsAddProjectDialogOpen(true);
+					return;
+				}
+				throw new Error(added.error ?? "Could not add project.");
+			}
+			handleAddProjectSuccess(added.project.id);
+		},
+		[currentProjectId, handleAddProjectSuccess],
+	);
+
 	const handleAddProject = useCallback(async () => {
+		// The desktop shell's own dialog always exists, so it is preferred over
+		// both the runtime picker (which shells out to zenity/kdialog/osascript
+		// and fails where those are missing) and the localhost gate — a shell
+		// user reaching a remote runtime still picks folders locally.
+		if (pickDesktopDirectory) {
+			try {
+				const path = await pickDesktopDirectory({ title: "Select a project folder" });
+				// Null means cancelled, which is not an error.
+				if (path) await addProjectAtPath(path);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				showAppToast({ intent: "danger", icon: "warning-sign", message, timeout: 7000 });
+			}
+			return;
+		}
+
 		if (!isLocalhostAccess()) {
 			setIsAddProjectDialogOpen(true);
 			return;
@@ -130,18 +168,7 @@ export function useProjectNavigation({ onProjectSwitchStart }: UseProjectNavigat
 			const picked = await trpcClient.projects.pickDirectory.mutate();
 
 			if (picked.ok && picked.path) {
-				const added = await trpcClient.projects.add.mutate({ path: picked.path });
-				if (!added.ok || !added.project) {
-					if (added.requiresGitInitialization) {
-						// Needs git init — open the dialog with the path
-						// pre-filled so the user can confirm initialization.
-						setPendingGitInitPath(picked.path);
-						setIsAddProjectDialogOpen(true);
-						return;
-					}
-					throw new Error(added.error ?? "Could not add project.");
-				}
-				handleAddProjectSuccess(added.project.id);
+				await addProjectAtPath(picked.path);
 				return;
 			}
 			if (!picked.ok && picked.error === "No directory was selected.") {
@@ -162,7 +189,7 @@ export function useProjectNavigation({ onProjectSwitchStart }: UseProjectNavigat
 				showAppToast({ intent: "danger", icon: "warning-sign", message, timeout: 7000 });
 			}
 		}
-	}, [currentProjectId, handleAddProjectSuccess]);
+	}, [addProjectAtPath, currentProjectId, pickDesktopDirectory]);
 
 	const handleRemoveProject = useCallback(
 		async (projectId: string): Promise<boolean> => {

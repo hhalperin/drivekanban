@@ -75,6 +75,12 @@ export const menuActionsPayloadSchema = z
 
 export type MenuActionsPayload = z.infer<typeof menuActionsPayloadSchema>;
 
+export const pickDirectoryPayloadSchema = z
+	.object({ title: z.string().trim().min(1).max(200).optional() })
+	.optional();
+
+export type PickDirectoryPayload = z.infer<typeof pickDirectoryPayloadSchema>;
+
 /**
  * Shared by every channel that takes no arguments. Modelled explicitly
  * rather than skipping validation, so a payload-less channel that later

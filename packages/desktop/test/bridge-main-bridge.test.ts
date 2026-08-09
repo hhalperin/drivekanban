@@ -67,6 +67,7 @@ let handlers: {
 	notify: Mock<(request: NotifyPayload) => void>;
 	setPresenceCounts: Mock<(counts: PresenceCountsPayload) => void>;
 	publishActions: Mock<(actions: MenuActionsPayload) => void>;
+	pickDirectory: Mock<() => Promise<string | null>>;
 };
 let warn: ReturnType<typeof vi.spyOn>;
 
@@ -81,6 +82,7 @@ beforeEach(() => {
 		notify: vi.fn(),
 		setPresenceCounts: vi.fn(),
 		publishActions: vi.fn(),
+		pickDirectory: vi.fn(async () => null),
 	};
 	warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 	registerDesktopBridge(ipc, handlers);
@@ -109,7 +111,9 @@ describe("registerDesktopBridge", () => {
 	});
 
 	it("registers exactly the declared invoke channels", () => {
-		expect(ipc.invokableChannels).toEqual([DesktopChannel.GetUpdateStatus]);
+		expect(ipc.invokableChannels.sort()).toEqual(
+			[DesktopChannel.GetUpdateStatus, DesktopChannel.PickDirectory].sort(),
+		);
 	});
 
 	it("does not accept the push-only status channel as inbound", () => {

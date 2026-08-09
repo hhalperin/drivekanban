@@ -14,6 +14,7 @@ interface FakeBridgeOverrides {
 	notifications?: unknown;
 	presence?: unknown;
 	actions?: unknown;
+	dialogs?: unknown;
 }
 
 function fakeBridge(overrides: FakeBridgeOverrides = {}): Record<string, unknown> {
@@ -21,12 +22,13 @@ function fakeBridge(overrides: FakeBridgeOverrides = {}): Record<string, unknown
 		bridgeVersion: DESKTOP_BRIDGE_VERSION,
 		platform: "darwin",
 		appVersion: "1.2.3",
-		capabilities: ["windows", "runtime", "updates", "notifications", "presence", "actions"],
+		capabilities: ["windows", "runtime", "updates", "notifications", "presence", "actions", "dialogs"],
 		windows: { openProject: vi.fn() },
 		runtime: { restart: vi.fn() },
 		notifications: { notify: vi.fn() },
 		presence: { setCounts: vi.fn() },
 		actions: { publish: vi.fn(), onInvoke: vi.fn(() => vi.fn()) },
+		dialogs: { pickDirectory: vi.fn(async () => null) },
 		updates: {
 			getStatus: vi.fn(async () => ({ kind: "idle" })),
 			check: vi.fn(),
@@ -77,6 +79,7 @@ describe("createDesktopClient — handshake", () => {
 		expect(client?.appVersion).toBe("1.2.3");
 		expect(client?.capabilities.slice().sort()).toEqual([
 			"actions",
+			"dialogs",
 			"notifications",
 			"presence",
 			"runtime",
@@ -245,6 +248,43 @@ describe("createDesktopClient — method dispatch", () => {
 		expect(() => client?.windows.openProject("proj-1")).not.toThrow();
 		expect(() => client?.runtime.restart()).not.toThrow();
 		expect(openProject).not.toHaveBeenCalled();
+	});
+
+	it("returns the picked directory path", async () => {
+		const pickDirectory = vi.fn(async () => "/Users/me/projects/app");
+		const client = createDesktopClient(fakeBridge({ dialogs: { pickDirectory } }));
+
+		await expect(client?.dialogs.pickDirectory({ title: "Pick" })).resolves.toBe("/Users/me/projects/app");
+		expect(pickDirectory).toHaveBeenCalledExactlyOnceWith({ title: "Pick" });
+	});
+
+	it("returns null when the picker is cancelled", async () => {
+		const client = createDesktopClient(fakeBridge({ dialogs: { pickDirectory: vi.fn(async () => null) } }));
+
+		await expect(client?.dialogs.pickDirectory()).resolves.toBeNull();
+	});
+
+	it("returns null — not a rejection — when the picker throws", async () => {
+		// A rejected round-trip is indistinguishable from a cancel as far as
+		// the caller is concerned, and its fallback handles both the same way.
+		vi.spyOn(console, "warn").mockImplementation(() => {});
+		const client = createDesktopClient(
+			fakeBridge({
+				dialogs: {
+					pickDirectory: vi.fn(async () => {
+						throw new Error("window destroyed");
+					}),
+				},
+			}),
+		);
+
+		await expect(client?.dialogs.pickDirectory()).resolves.toBeNull();
+	});
+
+	it("returns null when the dialogs capability is absent", async () => {
+		const client = createDesktopClient(fakeBridge({ capabilities: ["windows"] }));
+
+		await expect(client?.dialogs.pickDirectory()).resolves.toBeNull();
 	});
 
 	it("forwards a notification request", () => {

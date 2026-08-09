@@ -51,6 +51,7 @@ export const DESKTOP_CAPABILITIES = [
 	"notifications",
 	"presence",
 	"actions",
+	"dialogs",
 ] as const;
 
 export type DesktopCapability = (typeof DESKTOP_CAPABILITIES)[number];
@@ -91,6 +92,7 @@ export const DesktopChannel = {
 	Notify: "desktop:notifications:notify",
 	SetPresenceCounts: "desktop:presence:set-counts",
 	PublishActions: "desktop:actions:publish",
+	PickDirectory: "desktop:dialogs:pick-directory",
 	/** Main → renderer pushes. Not accepted as inbound channels. */
 	UpdateStatusChanged: "desktop:updates:status-changed",
 	InvokeAction: "desktop:actions:invoke",
@@ -226,6 +228,19 @@ export interface DesktopActionsApi {
 	onInvoke(listener: (actionId: string) => void): () => void;
 }
 
+export interface DesktopDialogsApi {
+	/**
+	 * Show the OS folder picker. Resolves to the chosen absolute path, or
+	 * `null` if the user cancelled.
+	 *
+	 * The runtime has its own picker that shells out to osascript / zenity /
+	 * kdialog / PowerShell, which is the only option in a browser but fails
+	 * outright on machines missing those binaries — a documented pain point on
+	 * headless Linux. Inside the shell, Electron's dialog is always present.
+	 */
+	pickDirectory(options?: { title?: string }): Promise<string | null>;
+}
+
 export interface DesktopApi extends DesktopBridgeHandshake {
 	readonly windows: DesktopWindowsApi;
 	readonly runtime: DesktopRuntimeApi;
@@ -233,6 +248,7 @@ export interface DesktopApi extends DesktopBridgeHandshake {
 	readonly notifications: DesktopNotificationsApi;
 	readonly presence: DesktopPresenceApi;
 	readonly actions: DesktopActionsApi;
+	readonly dialogs: DesktopDialogsApi;
 }
 
 /**

@@ -44,6 +44,14 @@ const desktopApi: DesktopApi = {
 		},
 	},
 
+	dialogs: {
+		pickDirectory(options?: { title?: string }): Promise<string | null> {
+			return ipcRenderer.invoke(DesktopChannel.PickDirectory, options) as Promise<
+				string | null
+			>;
+		},
+	},
+
 	actions: {
 		publish(actions: readonly DesktopMenuAction[]): void {
 			// Copied into a plain array: `contextBridge` cannot clone an

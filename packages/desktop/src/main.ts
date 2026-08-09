@@ -120,6 +120,7 @@ const bridgeCapabilities: DesktopCapability[] = [
 	"notifications",
 	"presence",
 	"actions",
+	"dialogs",
 ];
 
 const bridgeBootstrap: DesktopBridgeBootstrap = {
@@ -324,6 +325,23 @@ registerDesktopBridge(ipcMain, {
 	setPresenceCounts: (counts) => presenceController.update(counts),
 
 	publishActions: (actions) => menu.setActions(actions),
+
+	pickDirectory: async (options) => {
+		const parent = registry.getFocused();
+		// Parented to the requesting window so the dialog is modal to it on
+		// macOS rather than floating free of the app.
+		const result = parent
+			? await dialog.showOpenDialog(parent, {
+					title: options?.title ?? "Select a project folder",
+					properties: ["openDirectory", "createDirectory"],
+				})
+			: await dialog.showOpenDialog({
+					title: options?.title ?? "Select a project folder",
+					properties: ["openDirectory", "createDirectory"],
+				});
+		if (result.canceled) return null;
+		return result.filePaths[0] ?? null;
+	},
 
 	getUpdateStatus: () => updateController.getStatus(),
 	checkForUpdates: () => updateController.check(),

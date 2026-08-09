@@ -13,6 +13,8 @@ import {
 	menuActionsPayloadSchema,
 	type NotifyPayload,
 	notifyPayloadSchema,
+	type PickDirectoryPayload,
+	pickDirectoryPayloadSchema,
 	type PresenceCountsPayload,
 	presenceCountsPayloadSchema,
 	openProjectWindowPayloadSchema,
@@ -42,6 +44,7 @@ export interface DesktopBridgeHandlers {
 	notify(request: NotifyPayload): void;
 	setPresenceCounts(counts: PresenceCountsPayload): void;
 	publishActions(actions: MenuActionsPayload): void;
+	pickDirectory(options: PickDirectoryPayload): Promise<string | null>;
 }
 
 function warnInvalidPayload(channel: string, error: unknown): void {
@@ -108,6 +111,18 @@ export function registerDesktopBridge(
 	// on mount, before any push has been emitted, or a window opened
 	// mid-download would show "idle" until the next progress tick.
 	ipc.handle(DesktopChannel.GetUpdateStatus, () => handlers.getUpdateStatus());
+
+	ipc.handle(DesktopChannel.PickDirectory, async (_event, payload) => {
+		const parsed = pickDirectoryPayloadSchema.safeParse(payload);
+		if (!parsed.success) {
+			warnInvalidPayload(DesktopChannel.PickDirectory, parsed.error);
+			// Resolves rather than rejects: the caller treats null as "no
+			// directory chosen", which is the right outcome for a rejected
+			// request too.
+			return null;
+		}
+		return handlers.pickDirectory(parsed.data);
+	});
 }
 
 function registerEmptyPayloadChannel(
