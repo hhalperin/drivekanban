@@ -13,6 +13,9 @@ import { extractPersistablePath } from "./window-state.js";
  * rejection — failure should surface as a console warning, not crash the
  * Electron renderer-warnings pipeline.
  */
+/** Windows beyond this many are reachable from the menu list, but not by key. */
+const MAX_WINDOW_ACCELERATORS = 9;
+
 function openExternalSafe(url: string): void {
 	shell.openExternal(url).catch((err: unknown) => {
 		console.warn(
@@ -192,7 +195,7 @@ export class AppMenu {
 		const windowEntries = this.opts.registry.getVisible();
 		const focused = this.opts.registry.getFocused();
 		const windowListItems: Electron.MenuItemConstructorOptions[] =
-			windowEntries.map((entry) => {
+			windowEntries.map((entry, index) => {
 				const title = entry.window.isDestroyed()
 					? "Kanban"
 					: entry.window.getTitle() || "Kanban";
@@ -200,6 +203,13 @@ export class AppMenu {
 					label: title,
 					type: "checkbox" as const,
 					checked: focused?.id === entry.window.id,
+					// Cmd/Ctrl+1..9 jumps straight to the Nth window — the way
+					// every tabbed app works, and the fastest route between
+					// projects for someone running several at once. Only the
+					// first nine get one; beyond that the list itself is the UI.
+					...(index < MAX_WINDOW_ACCELERATORS
+						? { accelerator: `CmdOrCtrl+${index + 1}` }
+						: {}),
 					click: () => {
 						if (!entry.window.isDestroyed()) {
 							if (entry.window.isMinimized()) entry.window.restore();

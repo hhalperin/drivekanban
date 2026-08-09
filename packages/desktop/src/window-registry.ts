@@ -1,9 +1,10 @@
-import { BrowserWindow, screen, shell } from "electron";
+import { BrowserWindow, Menu, clipboard, screen, shell } from "electron";
 
 import {
 	type DesktopBridgeBootstrap,
 	encodeBridgeBootstrapArg,
 } from "./bridge/contract.js";
+import { buildContextMenuTemplate } from "./menu/context-menu.js";
 import {
 	type PersistedWindowState,
 	clampBoundsToDisplays,
@@ -77,6 +78,9 @@ export class WindowRegistry {
 				additionalArguments: [
 					encodeBridgeBootstrapArg(options.bridgeBootstrap),
 				],
+				// Electron ships no spell checker unless asked. Task prompts are
+				// the app's main text-entry surface, so this is squarely worth it.
+				spellcheck: true,
 				contextIsolation: true,
 				nodeIntegration: false,
 				sandbox: true,
@@ -104,6 +108,45 @@ export class WindowRegistry {
 		window.on("focus", () => {
 			this.lastFocusedId = window.id;
 			options.onWindowFocused?.(window.id);
+		});
+
+		window.webContents.on("context-menu", (_event, params) => {
+			const template = buildContextMenuTemplate(
+				{
+					isEditable: params.isEditable,
+					selectionText: params.selectionText,
+					// Only http(s) links get link actions; the same reasoning as
+					// `setWindowOpenHandler`, which refuses every other scheme.
+					linkURL: /^https?:\/\//i.test(params.linkURL) ? params.linkURL : "",
+					misspelledWord: params.misspelledWord,
+					dictionarySuggestions: params.dictionarySuggestions,
+					editFlags: {
+						canCut: params.editFlags.canCut,
+						canCopy: params.editFlags.canCopy,
+						canPaste: params.editFlags.canPaste,
+						canSelectAll: params.editFlags.canSelectAll,
+					},
+				},
+				{
+					replaceMisspelling: (replacement) =>
+						window.webContents.replaceMisspelling(replacement),
+					addToDictionary: (word) =>
+						window.webContents.session.addWordToSpellCheckerDictionary(word),
+					copyLink: (url) => clipboard.writeText(url),
+					openLink: (url) => {
+						shell.openExternal(url).catch((err: unknown) => {
+							console.warn(
+								"[desktop] shell.openExternal failed:",
+								err instanceof Error ? err.message : err,
+							);
+						});
+					},
+				},
+			);
+			if (template.length === 0) return;
+			Menu.buildFromTemplate(
+				template as Electron.MenuItemConstructorOptions[],
+			).popup({ window });
 		});
 
 		window.webContents.on("will-navigate", (event: Electron.Event, url: string) => {
