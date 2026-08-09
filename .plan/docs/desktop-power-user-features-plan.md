@@ -30,7 +30,14 @@ record; where the two disagree, this table wins.
 | 8. Quit safety | **Done** | Guards on running agents, not pending reviews |
 | 9. Action registry + native menu coverage | **Done** | Menu items use `registerAccelerator: false` so the renderer's hotkey handler stays the only binding |
 | 10. Command palette | **Done** | `mod+k`, reusing the existing `fzf` dependency |
-| 11–18 | **Not started** | Global shortcuts, window navigation, native pickers, context menu, drag-and-drop, recent projects / secure storage / zoom, log viewer / endpoint / sleep-wake, detached task windows |
+| 11. Global shortcuts + quick capture | **Partial** | Summon shortcut done — configurable, and an empty accelerator is honoured as a deliberate opt-out. Quick-capture composer not built |
+| 12. Window navigation accelerators | **Done** | Cmd/Ctrl+1..9; only the first nine windows get a key, past that the Window menu list is the UI |
+| 13. Native pickers | **Done** | Takes precedence over the localhost gate too — a shell against a remote runtime still picks folders locally |
+| 14. Context menu + spellcheck | **Done** | Template is a pure function; `spellcheck: true` on every window |
+| 15. Drag-and-drop | **Not started** | |
+| 16. Recent projects / secure storage / zoom | **Partial** | Zoom persistence done, reapplied on `did-finish-load` since Electron resets zoom per navigation. Recent projects needs the project *path* over the bridge (the renderer holds ids); secure storage still gated on open question 5 |
+| 17. Log viewer / endpoint / sleep-wake | **Done** | The log viewer is a shell-owned page with its own preload — it must work when the runtime is down, which is exactly when it is wanted |
+| 18. Detached task windows | **Not started** | |
 
 ### Found by building, not by planning
 
