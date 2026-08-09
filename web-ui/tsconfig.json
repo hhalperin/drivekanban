@@ -13,6 +13,7 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
+      "@desktop-bridge": ["../packages/desktop/src/bridge/contract.ts"],
       "@runtime-agent-catalog": ["../src/core/agent-catalog.ts"],
       "@runtime-cline-tool-call-display": ["../src/cline-sdk/cline-tool-call-display.ts"],
       "@runtime-contract": ["../src/core/api-contract.ts"],

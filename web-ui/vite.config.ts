@@ -80,6 +80,7 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			"@": resolve(__dirname, "src"),
+			"@desktop-bridge": resolve(__dirname, "../packages/desktop/src/bridge/contract.ts"),
 			"@runtime-agent-catalog": resolve(__dirname, "../src/core/agent-catalog.ts"),
 			"@runtime-cline-tool-call-display": resolve(__dirname, "../src/cline-sdk/cline-tool-call-display.ts"),
 			"@runtime-home-agent-session": resolve(__dirname, "../src/core/home-agent-session.ts"),

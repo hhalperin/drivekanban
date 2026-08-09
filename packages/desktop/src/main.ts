@@ -3,6 +3,8 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 import { AppMenu } from "./app-menu.js";
+import type { DesktopBridgeBootstrap } from "./bridge/contract.js";
+import { registerDesktopBridge } from "./bridge/main-bridge.js";
 import { relayOAuthCallback } from "./oauth-relay.js";
 import {
 	extractProtocolUrlFromArgv,
@@ -41,8 +43,18 @@ const orchestrator = new RuntimeOrchestrator({
 	resolveCliShimPath,
 });
 
+// Advertised to the renderer at window-construction time. Every entry here
+// is a promise that the matching `window.desktop` namespace will actually do
+// something, so a capability is only listed once its main-process handler is
+// registered below — never speculatively.
+const bridgeBootstrap: DesktopBridgeBootstrap = {
+	appVersion: app.getVersion(),
+	capabilities: ["windows", "runtime"],
+};
+
 const windowFactory = new WindowFactory({
 	preloadPath,
+	bridgeBootstrap,
 	isPackaged: app.isPackaged,
 	backgroundColor: BACKGROUND_COLOR,
 	disconnectedHtmlPath,
@@ -152,12 +164,6 @@ function resolveCliShimPath(): string {
 	return path.join(import.meta.dirname, "..", "build", "bin", devShimName);
 }
 
-ipcMain.on("open-project-window", (_event, projectId: string) => {
-	if (typeof projectId === "string" && projectId) {
-		windowFactory.create({ projectId });
-	}
-});
-
 // Tracks an in-flight `orchestrator.restart()` so duplicate IPC pings
 // (button-mash, two windows hitting "Restart" simultaneously) collapse into
 // a single restart attempt. The orchestrator's own `restartPromise` join
@@ -166,25 +172,33 @@ ipcMain.on("open-project-window", (_event, projectId: string) => {
 // dialog twice. The early-return here keeps the user-facing UX coherent.
 let activeRestart: Promise<void> | null = null;
 
-ipcMain.on("restart-runtime", () => {
-	if (activeRestart) {
-		console.log("[desktop] Restart already in progress — ignoring duplicate request.");
-		return;
-	}
-	console.log("[desktop] Restart requested from renderer.");
-	activeRestart = orchestrator
-		.restart()
-		.catch((error) => {
-			const msg = error instanceof Error ? error.message : String(error);
-			console.error(`[desktop] Failed to restart runtime: ${msg}`);
-			dialog.showErrorBox(
-				"Kanban Startup Error",
-				`Failed to restart runtime:\n\n${msg}`,
+registerDesktopBridge(ipcMain, {
+	openProjectWindow(projectId) {
+		windowFactory.create({ projectId });
+	},
+
+	restartRuntime() {
+		if (activeRestart) {
+			console.log(
+				"[desktop] Restart already in progress — ignoring duplicate request.",
 			);
-		})
-		.finally(() => {
-			activeRestart = null;
-		});
+			return;
+		}
+		console.log("[desktop] Restart requested from renderer.");
+		activeRestart = orchestrator
+			.restart()
+			.catch((error) => {
+				const msg = error instanceof Error ? error.message : String(error);
+				console.error(`[desktop] Failed to restart runtime: ${msg}`);
+				dialog.showErrorBox(
+					"Kanban Startup Error",
+					`Failed to restart runtime:\n\n${msg}`,
+				);
+			})
+			.finally(() => {
+				activeRestart = null;
+			});
+	},
 });
 
 

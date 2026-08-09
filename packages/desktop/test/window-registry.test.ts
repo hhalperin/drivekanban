@@ -173,6 +173,7 @@ interface MockWindow {
 
 const DEFAULT_OPTIONS = {
 	preloadPath: "/tmp/preload.js",
+	bridgeBootstrap: { appVersion: "9.9.9", capabilities: [] },
 	isPackaged: false,
 };
 

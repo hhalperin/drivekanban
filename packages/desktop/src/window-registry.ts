@@ -1,6 +1,10 @@
 import { BrowserWindow, screen, shell } from "electron";
 
 import {
+	type DesktopBridgeBootstrap,
+	encodeBridgeBootstrapArg,
+} from "./bridge/contract.js";
+import {
 	type PersistedWindowState,
 	clampBoundsToDisplays,
 	extractPersistablePath,
@@ -20,6 +24,7 @@ export interface CreateWindowOptions {
 	projectId?: string | null;
 	savedState?: PersistedWindowState;
 	preloadPath: string;
+	bridgeBootstrap: DesktopBridgeBootstrap;
 	isPackaged: boolean;
 	backgroundColor?: string;
 	onWindowClosed?: (windowId: number) => void;
@@ -66,6 +71,12 @@ export class WindowRegistry {
 			show: false,
 			webPreferences: {
 				preload: options.preloadPath,
+				// A sandboxed preload can't reach `app.getVersion()` and shouldn't
+				// spend a synchronous IPC round-trip on constants, so the bridge
+				// handshake values ride in on argv. See `encodeBridgeBootstrapArg`.
+				additionalArguments: [
+					encodeBridgeBootstrapArg(options.bridgeBootstrap),
+				],
 				contextIsolation: true,
 				nodeIntegration: false,
 				sandbox: true,

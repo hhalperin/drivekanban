@@ -154,7 +154,7 @@ describe("restart-runtime IPC concurrency", () => {
 		// fire in parallel (the second would see the latch already cleared
 		// because clearing happens synchronously after `.restart()` returns
 		// the promise).
-		const handlerStart = mainSrc.indexOf('ipcMain.on("restart-runtime"');
+		const handlerStart = mainSrc.indexOf("restartRuntime() {");
 		expect(handlerStart).toBeGreaterThan(-1);
 		const handlerSlice = mainSrc.slice(handlerStart, handlerStart + 1000);
 		const guardIdx = handlerSlice.indexOf("if (activeRestart)");

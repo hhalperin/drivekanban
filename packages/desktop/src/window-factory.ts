@@ -1,5 +1,6 @@
 import { dialog, type BrowserWindow } from "electron";
 
+import type { DesktopBridgeBootstrap } from "./bridge/contract.js";
 import { WindowRegistry } from "./window-registry.js";
 import {
 	type PersistedWindowState,
@@ -18,6 +19,7 @@ const ERR_ABORTED = -3;
 
 export interface WindowFactoryOptions {
 	preloadPath: string;
+	bridgeBootstrap: DesktopBridgeBootstrap;
 	isPackaged: boolean;
 	backgroundColor: string;
 	disconnectedHtmlPath: string;
@@ -41,6 +43,7 @@ export class WindowFactory {
 			projectId: options.projectId ?? null,
 			savedState: options.savedState,
 			preloadPath: this.opts.preloadPath,
+			bridgeBootstrap: this.opts.bridgeBootstrap,
 			isPackaged: this.opts.isPackaged,
 			backgroundColor: this.opts.backgroundColor,
 			hideOnCloseForMac: true,
