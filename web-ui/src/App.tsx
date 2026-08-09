@@ -31,6 +31,7 @@ import {
 import { Spinner } from "@/components/ui/spinner";
 import { UpdateNotificationController } from "@/components/update-notification-controller";
 import { createInitialBoardData } from "@/data/board-data";
+import { usePresenceReporter } from "@/desktop/use-presence-reporter";
 import { createIdleTaskSession } from "@/hooks/app-utils";
 import { KanbanAccessBlockedFallback } from "@/hooks/kanban-access-blocked-fallback";
 import { RuntimeDisconnectedFallback } from "@/hooks/runtime-disconnected-fallback";
@@ -269,6 +270,10 @@ export default function App(): ReactElement {
 		isWorkspaceMetadataPending,
 		hasReceivedSnapshot,
 	});
+
+	// Drives the desktop dock badge, tray summary and quit guard. No-op in a
+	// browser.
+	usePresenceReporter(board);
 
 	useReviewReadyNotifications({
 		activeWorkspaceId: activeNotificationWorkspaceId,

@@ -10,6 +10,9 @@ import {
 } from "./bridge/contract.js";
 import { registerDesktopBridge } from "./bridge/main-bridge.js";
 import { createElectronNotificationBackend } from "./notifications/electron-notification-backend.js";
+import { AppTray } from "./presence/app-tray.js";
+import { createElectronPresenceView } from "./presence/electron-presence-view.js";
+import { PresenceController } from "./presence/presence-controller.js";
 import { NotificationController } from "./notifications/notification-controller.js";
 import { createElectronUpdaterBackend } from "./updater/electron-updater-backend.js";
 import {
@@ -36,6 +39,9 @@ const HEALTH_TIMEOUT_MS = 3_000;
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 
 const preloadPath = path.join(import.meta.dirname, "preload.js");
+const trayIconPath = app.isPackaged
+	? path.join(process.resourcesPath, "icon.png")
+	: path.join(import.meta.dirname, "..", "build", "icon.png");
 const disconnectedHtmlPath = path.join(import.meta.dirname, "disconnected.html");
 
 // Must run before `app.whenReady()`.
@@ -68,14 +74,6 @@ const updateController = new UpdateController(
 	updateSupport,
 );
 
-// Advertised to the renderer at window-construction time. Every entry here
-// is a promise that the matching `window.desktop` namespace will actually do
-// something, so a capability is only listed once its main-process handler is
-// registered below — never speculatively.
-//
-// `updates` is advertised even when unsupported: the namespace works and
-// truthfully reports `{ kind: "unsupported" }`, which is what lets the UI
-// explain *why* rather than silently hiding the control.
 const notificationController = new NotificationController({
 	backend: createElectronNotificationBackend(),
 	// `getFocused` returns the last-focused window even when the app is in the
@@ -85,11 +83,42 @@ const notificationController = new NotificationController({
 	reveal: (target) => windowFactory.revealTarget(target),
 });
 
+const tray = new AppTray({
+	iconPath: trayIconPath,
+	onShowKanban: () => {
+		const focused = registry.getFocused();
+		if (focused && !focused.isDestroyed()) {
+			if (focused.isMinimized()) focused.restore();
+			focused.show();
+			focused.focus();
+			return;
+		}
+		windowFactory.create();
+	},
+	onQuit: () => app.quit(),
+});
+
+const presenceController = new PresenceController(
+	createElectronPresenceView({
+		getAttentionWindow: () => registry.getFocused(),
+		onSummaryChanged: (summary) => tray.setSummary(summary),
+	}),
+);
+
+// Advertised to the renderer at window-construction time. Every entry here
+// is a promise that the matching `window.desktop` namespace will actually do
+// something, so a capability is only listed once its main-process handler is
+// registered below — never speculatively.
+//
+// `updates` is advertised even when unsupported: the namespace works and
+// truthfully reports `{ kind: "unsupported" }`, which is what lets the UI
+// explain *why* rather than silently hiding the control.
 const bridgeCapabilities: DesktopCapability[] = [
 	"windows",
 	"runtime",
 	"updates",
 	"notifications",
+	"presence",
 ];
 
 const bridgeBootstrap: DesktopBridgeBootstrap = {
@@ -282,6 +311,8 @@ registerDesktopBridge(ipcMain, {
 		});
 	},
 
+	setPresenceCounts: (counts) => presenceController.update(counts),
+
 	getUpdateStatus: () => updateController.getStatus(),
 	checkForUpdates: () => updateController.check(),
 	installUpdate: () => updateController.install(),
@@ -338,6 +369,7 @@ function wireAppLifecycle(): void {
 		}
 
 		menu.rebuild();
+		tray.start();
 		orchestrator.startAppNapPrevention();
 
 		// Check once at startup, then on a timer. The timer is the load-bearing
@@ -388,7 +420,31 @@ function wireAppLifecycle(): void {
 
 	app.on("before-quit", async (event) => {
 		if (isQuitting) return;
+
+		// Quitting kills the runtime child, and with it every agent session in
+		// flight. Until now that happened silently — a user with ten agents
+		// mid-task lost all of them to a reflexive Cmd+Q. Ask first.
+		if (presenceController.hasWorkInFlight()) {
+			const { running } = presenceController.getCounts();
+			const choice = dialog.showMessageBoxSync({
+				type: "warning",
+				title: "Quit Kanban?",
+				message: `${running} agent ${running === 1 ? "session is" : "sessions are"} still running.`,
+				detail:
+					"Quitting stops the Kanban runtime and interrupts those sessions.",
+				buttons: ["Cancel", "Quit Anyway"],
+				defaultId: 0,
+				// Escape maps to Cancel, so a dismissed dialog never quits.
+				cancelId: 0,
+			});
+			if (choice === 0) {
+				event.preventDefault();
+				return;
+			}
+		}
+
 		isQuitting = true;
+		tray.destroy();
 
 		registry.saveAllStates(app.getPath("userData"));
 

@@ -49,6 +49,7 @@ export const DESKTOP_CAPABILITIES = [
 	"runtime",
 	"updates",
 	"notifications",
+	"presence",
 ] as const;
 
 export type DesktopCapability = (typeof DESKTOP_CAPABILITIES)[number];
@@ -87,6 +88,7 @@ export const DesktopChannel = {
 	CheckForUpdates: "desktop:updates:check",
 	InstallUpdate: "desktop:updates:install",
 	Notify: "desktop:notifications:notify",
+	SetPresenceCounts: "desktop:presence:set-counts",
 	/** Main → renderer push. Not accepted as an inbound channel. */
 	UpdateStatusChanged: "desktop:updates:status-changed",
 } as const;
@@ -175,11 +177,30 @@ export interface DesktopNotificationsApi {
 	notify(request: DesktopNotificationRequest): void;
 }
 
+export interface DesktopPresenceCounts {
+	/** Agent sessions currently working. */
+	readonly running: number;
+	/** Tasks finished and waiting on a human. */
+	readonly readyForReview: number;
+}
+
+export interface DesktopPresenceApi {
+	/**
+	 * Report current activity so the shell can drive the dock badge, tray and
+	 * attention signals, and warn before a quit that would interrupt work.
+	 *
+	 * Push the full counts rather than deltas: a dropped or duplicated message
+	 * then self-corrects on the next update instead of drifting permanently.
+	 */
+	setCounts(counts: DesktopPresenceCounts): void;
+}
+
 export interface DesktopApi extends DesktopBridgeHandshake {
 	readonly windows: DesktopWindowsApi;
 	readonly runtime: DesktopRuntimeApi;
 	readonly updates: DesktopUpdatesApi;
 	readonly notifications: DesktopNotificationsApi;
+	readonly presence: DesktopPresenceApi;
 }
 
 /**

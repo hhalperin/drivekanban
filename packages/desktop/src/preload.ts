@@ -6,6 +6,7 @@ import {
 	type DesktopApi,
 	DesktopChannel,
 	type DesktopNotificationRequest,
+	type DesktopPresenceCounts,
 	type DesktopUpdateStatus,
 	parseBridgeBootstrapArg,
 	toDesktopPlatform,
@@ -39,6 +40,12 @@ const desktopApi: DesktopApi = {
 	runtime: {
 		restart(): void {
 			ipcRenderer.send(DesktopChannel.RestartRuntime);
+		},
+	},
+
+	presence: {
+		setCounts(counts: DesktopPresenceCounts): void {
+			ipcRenderer.send(DesktopChannel.SetPresenceCounts, counts);
 		},
 	},
 

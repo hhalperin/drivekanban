@@ -11,6 +11,8 @@ import {
 	emptyPayloadSchema,
 	type NotifyPayload,
 	notifyPayloadSchema,
+	type PresenceCountsPayload,
+	presenceCountsPayloadSchema,
 	openProjectWindowPayloadSchema,
 } from "./ipc-schemas.js";
 
@@ -36,6 +38,7 @@ export interface DesktopBridgeHandlers {
 	checkForUpdates(): void;
 	installUpdate(): void;
 	notify(request: NotifyPayload): void;
+	setPresenceCounts(counts: PresenceCountsPayload): void;
 }
 
 function warnInvalidPayload(channel: string, error: unknown): void {
@@ -78,6 +81,15 @@ export function registerDesktopBridge(
 			return;
 		}
 		handlers.notify(parsed.data);
+	});
+
+	ipc.on(DesktopChannel.SetPresenceCounts, (_event, payload) => {
+		const parsed = presenceCountsPayloadSchema.safeParse(payload);
+		if (!parsed.success) {
+			warnInvalidPayload(DesktopChannel.SetPresenceCounts, parsed.error);
+			return;
+		}
+		handlers.setPresenceCounts(parsed.data);
 	});
 
 	// `handle`, not `on`: the renderer needs the current status synchronously

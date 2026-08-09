@@ -26,6 +26,10 @@ extraResources:
     filter:
       - "kanban"
       - "kanban.cmd"
+  # The tray builds its icon from a real filesystem path, so the PNG has to
+  # live outside the asar.
+  - from: build/icon.png
+    to: icon.png
 
 protocols:
   - name: Kanban

@@ -43,6 +43,20 @@ export const notifyPayloadSchema = z
 export type NotifyPayload = z.infer<typeof notifyPayloadSchema>;
 
 /**
+ * Counts are clamped rather than merely validated. A renderer bug producing a
+ * huge number would otherwise reach `app.setBadgeCount`, and there is no
+ * sensible reading of "9 million tasks ready".
+ */
+const presenceCount = z.number().int().min(0).max(9_999).catch(0);
+
+export const presenceCountsPayloadSchema = z.object({
+	running: presenceCount,
+	readyForReview: presenceCount,
+});
+
+export type PresenceCountsPayload = z.infer<typeof presenceCountsPayloadSchema>;
+
+/**
  * Shared by every channel that takes no arguments. Modelled explicitly
  * rather than skipping validation, so a payload-less channel that later
  * grows a payload can't silently start accepting unvalidated input.

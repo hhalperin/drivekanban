@@ -15,6 +15,7 @@ import {
 	type DesktopApi,
 	type DesktopCapability,
 	type DesktopNotificationsApi,
+	type DesktopPresenceApi,
 	type DesktopRuntimeApi,
 	type DesktopUpdateStatus,
 	type DesktopUpdatesApi,
@@ -93,6 +94,7 @@ export function createDesktopClient(candidate: unknown): DesktopClient | null {
 		Array.isArray(candidate.capabilities) ? candidate.capabilities.filter(isDesktopCapability) : [],
 	);
 	const notify = readMethod(candidate, "notifications", "notify");
+	const setPresenceCounts = readMethod(candidate, "presence", "setCounts");
 	const getUpdateStatus = readMethod(candidate, "updates", "getStatus");
 	const checkForUpdates = readMethod(candidate, "updates", "check");
 	const installUpdate = readMethod(candidate, "updates", "install");
@@ -107,6 +109,7 @@ export function createDesktopClient(candidate: unknown): DesktopClient | null {
 		effective.add("updates");
 	}
 	if (notify && advertised.has("notifications")) effective.add("notifications");
+	if (setPresenceCounts && advertised.has("presence")) effective.add("presence");
 
 	const windows: DesktopWindowsApi = {
 		openProject(projectId) {
@@ -117,6 +120,12 @@ export function createDesktopClient(candidate: unknown): DesktopClient | null {
 	const runtime: DesktopRuntimeApi = {
 		restart() {
 			if (effective.has("runtime")) restart?.();
+		},
+	};
+
+	const presence: DesktopPresenceApi = {
+		setCounts(counts) {
+			if (effective.has("presence")) setPresenceCounts?.(counts as never);
 		},
 	};
 
@@ -166,6 +175,7 @@ export function createDesktopClient(candidate: unknown): DesktopClient | null {
 		runtime,
 		updates,
 		notifications,
+		presence,
 		has: (capability) => effective.has(capability),
 	};
 }

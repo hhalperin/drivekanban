@@ -12,6 +12,7 @@ interface FakeBridgeOverrides {
 	runtime?: unknown;
 	updates?: unknown;
 	notifications?: unknown;
+	presence?: unknown;
 }
 
 function fakeBridge(overrides: FakeBridgeOverrides = {}): Record<string, unknown> {
@@ -19,10 +20,11 @@ function fakeBridge(overrides: FakeBridgeOverrides = {}): Record<string, unknown
 		bridgeVersion: DESKTOP_BRIDGE_VERSION,
 		platform: "darwin",
 		appVersion: "1.2.3",
-		capabilities: ["windows", "runtime", "updates", "notifications"],
+		capabilities: ["windows", "runtime", "updates", "notifications", "presence"],
 		windows: { openProject: vi.fn() },
 		runtime: { restart: vi.fn() },
 		notifications: { notify: vi.fn() },
+		presence: { setCounts: vi.fn() },
 		updates: {
 			getStatus: vi.fn(async () => ({ kind: "idle" })),
 			check: vi.fn(),
@@ -71,7 +73,13 @@ describe("createDesktopClient — handshake", () => {
 		expect(client?.bridgeVersion).toBe(DESKTOP_BRIDGE_VERSION);
 		expect(client?.platform).toBe("darwin");
 		expect(client?.appVersion).toBe("1.2.3");
-		expect(client?.capabilities.slice().sort()).toEqual(["notifications", "runtime", "updates", "windows"]);
+		expect(client?.capabilities.slice().sort()).toEqual([
+			"notifications",
+			"presence",
+			"runtime",
+			"updates",
+			"windows",
+		]);
 	});
 
 	it("normalises an unrecognised platform to 'other'", () => {

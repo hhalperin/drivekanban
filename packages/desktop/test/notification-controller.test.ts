@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 
 import {
 	NotificationController,
@@ -54,7 +54,7 @@ const TARGET: DeepLinkTarget = {
 };
 
 let backend: FakeBackend;
-let reveal: ReturnType<typeof vi.fn>;
+let reveal: Mock<(target: DeepLinkTarget) => void>;
 let focused: boolean;
 let controller: NotificationController;
 

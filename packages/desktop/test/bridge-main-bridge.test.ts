@@ -4,7 +4,10 @@ import {
 	DesktopChannel,
 	type DesktopUpdateStatus,
 } from "../src/bridge/contract.js";
-import type { NotifyPayload } from "../src/bridge/ipc-schemas.js";
+import type {
+	NotifyPayload,
+	PresenceCountsPayload,
+} from "../src/bridge/ipc-schemas.js";
 import {
 	type IpcMainLike,
 	registerDesktopBridge,
@@ -61,6 +64,7 @@ let handlers: {
 	checkForUpdates: Mock<() => void>;
 	installUpdate: Mock<() => void>;
 	notify: Mock<(request: NotifyPayload) => void>;
+	setPresenceCounts: Mock<(counts: PresenceCountsPayload) => void>;
 };
 let warn: ReturnType<typeof vi.spyOn>;
 
@@ -73,6 +77,7 @@ beforeEach(() => {
 		checkForUpdates: vi.fn(),
 		installUpdate: vi.fn(),
 		notify: vi.fn(),
+		setPresenceCounts: vi.fn(),
 	};
 	warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 	registerDesktopBridge(ipc, handlers);
@@ -94,6 +99,7 @@ describe("registerDesktopBridge", () => {
 				DesktopChannel.CheckForUpdates,
 				DesktopChannel.InstallUpdate,
 				DesktopChannel.Notify,
+				DesktopChannel.SetPresenceCounts,
 			].sort(),
 		);
 	});

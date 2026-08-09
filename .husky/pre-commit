@@ -16,6 +16,21 @@ if [ $? -ne 0 ]; then
 	exit 1
 fi
 
+# CI typechecks web-ui and packages/desktop separately, and the root tsconfig
+# covers neither. Without these, a type error in either package passes
+# pre-commit and only fails once it reaches CI. Skipped when the package has
+# no node_modules, so a root-only checkout can still commit.
+for pkg in web-ui packages/desktop; do
+	if [ -d "$pkg/node_modules" ]; then
+		echo "Type checking $pkg..."
+		npm --prefix "$pkg" run typecheck
+		if [ $? -ne 0 ]; then
+			echo "$pkg typecheck failed."
+			exit 1
+		fi
+	fi
+done
+
 for file in $STAGED_FILES; do
 	if [ -f "$file" ]; then
 		git add "$file"
