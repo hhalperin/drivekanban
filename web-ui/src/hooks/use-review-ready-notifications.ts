@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useReviewReadyNotifier } from "@/desktop/use-review-ready-notifier";
 import type { RuntimeStateStreamTaskReadyForReviewMessage, RuntimeTaskSessionSummary } from "@/runtime/types";
 import { findCardSelection } from "@/state/board-state";
 import type { BoardData } from "@/types";
@@ -7,7 +8,6 @@ import {
 	createNotificationBadgeSyncSourceId,
 	subscribeToNotificationBadgeClear,
 } from "@/utils/notification-badge-sync";
-import { getBrowserNotificationPermission } from "@/utils/notification-permission";
 import { useDocumentTitle, useInterval, useUnmount, useWindowEvent } from "@/utils/react-use";
 import {
 	createTabPresenceId,
@@ -30,10 +30,6 @@ interface UseReviewReadyNotificationsOptions {
 const MAX_HANDLED_READY_EVENT_KEYS = 200;
 const TAB_VISIBILITY_HEARTBEAT_INTERVAL_MS = 5000;
 
-function canShowBrowserNotifications(): boolean {
-	return getBrowserNotificationPermission() === "granted";
-}
-
 function isDocumentCurrentlyVisible(fallbackValue: boolean): boolean {
 	if (typeof document === "undefined") {
 		return fallbackValue;
@@ -50,27 +46,6 @@ function resolveReviewReadyNotificationBody(
 	return finalMessage || taskTitle;
 }
 
-function showReadyForReviewNotification(taskId: string, notificationTitle: string, notificationBody: string): void {
-	if (!canShowBrowserNotifications()) {
-		return;
-	}
-	try {
-		const notification = new Notification(notificationTitle, {
-			body: notificationBody,
-			tag: `task-ready-for-review-${taskId}`,
-			icon: "/assets/icon-notification.png",
-		});
-		notification.onclick = () => {
-			if (typeof window !== "undefined") {
-				window.focus();
-			}
-			notification.close();
-		};
-	} catch {
-		// Ignore browser notification failures.
-	}
-}
-
 export function useReviewReadyNotifications({
 	activeWorkspaceId,
 	board,
@@ -80,6 +55,7 @@ export function useReviewReadyNotifications({
 	readyForReviewNotificationsEnabled,
 	workspacePath,
 }: UseReviewReadyNotificationsOptions): void {
+	const notifyReviewReady = useReviewReadyNotifier();
 	const notificationPresenceTabIdRef = useRef<string>(createTabPresenceId());
 	const notificationBadgeSyncSourceIdRef = useRef<string>(createNotificationBadgeSyncSourceId());
 	const handledReadyForReviewEventKeysRef = useRef<Set<string>>(new Set());
@@ -189,10 +165,17 @@ export function useReviewReadyNotifications({
 		);
 		setPendingReviewReadyNotificationCount((current) => current + 1);
 		const notificationTitle = workspaceTitle ? `${workspaceTitle} ready for review` : "Ready for review";
-		showReadyForReviewNotification(latestTaskReadyForReview.taskId, notificationTitle, notificationBody);
+		notifyReviewReady({
+			eventKey,
+			taskId: latestTaskReadyForReview.taskId,
+			projectId: activeWorkspaceId,
+			title: notificationTitle,
+			body: notificationBody,
+		});
 	}, [
 		activeWorkspaceId,
 		board,
+		notifyReviewReady,
 		isDocumentVisible,
 		isWindowFocused,
 		latestTaskReadyForReview,

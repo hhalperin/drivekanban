@@ -9,6 +9,8 @@
 import { DesktopChannel, type DesktopUpdateStatus } from "./contract.js";
 import {
 	emptyPayloadSchema,
+	type NotifyPayload,
+	notifyPayloadSchema,
 	openProjectWindowPayloadSchema,
 } from "./ipc-schemas.js";
 
@@ -33,6 +35,7 @@ export interface DesktopBridgeHandlers {
 	getUpdateStatus(): DesktopUpdateStatus;
 	checkForUpdates(): void;
 	installUpdate(): void;
+	notify(request: NotifyPayload): void;
 }
 
 function warnInvalidPayload(channel: string, error: unknown): void {
@@ -67,6 +70,15 @@ export function registerDesktopBridge(
 	registerEmptyPayloadChannel(ipc, DesktopChannel.InstallUpdate, () =>
 		handlers.installUpdate(),
 	);
+
+	ipc.on(DesktopChannel.Notify, (_event, payload) => {
+		const parsed = notifyPayloadSchema.safeParse(payload);
+		if (!parsed.success) {
+			warnInvalidPayload(DesktopChannel.Notify, parsed.error);
+			return;
+		}
+		handlers.notify(parsed.data);
+	});
 
 	// `handle`, not `on`: the renderer needs the current status synchronously
 	// on mount, before any push has been emitted, or a window opened

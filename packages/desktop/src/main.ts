@@ -9,6 +9,8 @@ import {
 	DesktopChannel,
 } from "./bridge/contract.js";
 import { registerDesktopBridge } from "./bridge/main-bridge.js";
+import { createElectronNotificationBackend } from "./notifications/electron-notification-backend.js";
+import { NotificationController } from "./notifications/notification-controller.js";
 import { createElectronUpdaterBackend } from "./updater/electron-updater-backend.js";
 import {
 	resolveUpdateSupport,
@@ -16,9 +18,12 @@ import {
 } from "./updater/update-controller.js";
 import { relayOAuthCallback } from "./oauth-relay.js";
 import {
+	buildDeepLinkTarget,
+	type DeepLinkRoute,
 	extractProtocolUrlFromArgv,
 	parseProtocolUrl,
 	registerProtocol,
+	resolveDeepLinkRoute,
 } from "./protocol-handler.js";
 import { RuntimeOrchestrator } from "./runtime-orchestrator.js";
 import { WindowFactory } from "./window-factory.js";
@@ -71,7 +76,21 @@ const updateController = new UpdateController(
 // `updates` is advertised even when unsupported: the namespace works and
 // truthfully reports `{ kind: "unsupported" }`, which is what lets the UI
 // explain *why* rather than silently hiding the control.
-const bridgeCapabilities: DesktopCapability[] = ["windows", "runtime", "updates"];
+const notificationController = new NotificationController({
+	backend: createElectronNotificationBackend(),
+	// `getFocused` returns the last-focused window even when the app is in the
+	// background, so ask the app itself. A notification about something the
+	// user is currently looking at is noise.
+	isAppFocused: () => BrowserWindow.getFocusedWindow() !== null,
+	reveal: (target) => windowFactory.revealTarget(target),
+});
+
+const bridgeCapabilities: DesktopCapability[] = [
+	"windows",
+	"runtime",
+	"updates",
+	"notifications",
+];
 
 const bridgeBootstrap: DesktopBridgeBootstrap = {
 	appVersion: app.getVersion(),
@@ -98,11 +117,11 @@ const menu = new AppMenu({
 });
 
 // macOS can deliver `open-url` events before the runtime is ready (the app
-// was launched *by* a `kanban://` link). Queue any callbacks until the
-// runtime URL lands. An array — not a scalar — because nothing prevents the
-// OS from delivering multiple links during the startup window (e.g. a user
-// kicking off two OAuth flows in quick succession).
-const pendingOAuthUrls: string[] = [];
+// was launched *by* a `kanban://` link). Queue any links until the runtime
+// URL lands. An array — not a scalar — because nothing prevents the OS from
+// delivering multiple links during the startup window (e.g. a user kicking
+// off two OAuth flows in quick succession, or clicking two notifications).
+const pendingDeepLinks: string[] = [];
 
 orchestrator.on("url-changed", (url) => {
 	if (url) {
@@ -112,14 +131,28 @@ orchestrator.on("url-changed", (url) => {
 				err instanceof Error ? err.message : err,
 			);
 		});
-		if (pendingOAuthUrls.length > 0) {
-			const drained = pendingOAuthUrls.splice(0, pendingOAuthUrls.length);
+		if (pendingDeepLinks.length > 0) {
+			const drained = pendingDeepLinks.splice(0, pendingDeepLinks.length);
 			for (const pending of drained) handleProtocolUrl(pending);
 		}
 	}
 	menu.rebuild();
 });
 orchestrator.on("crashed", () => windowFactory.showDisconnectedScreen());
+
+/**
+ * The route a notification click should follow, or `null` when the caller
+ * gave no destination. The schema already rejects a task without its project,
+ * so a lone `taskId` cannot reach here.
+ */
+function resolveNotificationRoute(
+	projectId: string | undefined,
+	taskId: string | undefined,
+): DeepLinkRoute | null {
+	if (!projectId) return null;
+	if (taskId) return { kind: "task", projectId, taskId };
+	return { kind: "project", projectId };
+}
 
 function handleProtocolUrl(raw: string): void {
 	const parsed = parseProtocolUrl(raw);
@@ -130,7 +163,8 @@ function handleProtocolUrl(raw: string): void {
 		console.warn(`[desktop] Ignoring unrecognized protocol URL: ${raw}`);
 		return;
 	}
-	if (!parsed.isOAuthCallback) {
+	const route = resolveDeepLinkRoute(parsed);
+	if (!route) {
 		console.warn(
 			`[desktop] Deep link to ${parsed.pathname} received but no handler is wired for that route: ${raw}`,
 		);
@@ -139,7 +173,16 @@ function handleProtocolUrl(raw: string): void {
 
 	const runtimeUrl = orchestrator.getUrl();
 	if (!runtimeUrl) {
-		pendingOAuthUrls.push(raw);
+		// Every route needs the runtime: OAuth relays to it over HTTP, and
+		// navigable routes need its origin to build a URL. Queue and replay
+		// once `url-changed` fires.
+		pendingDeepLinks.push(raw);
+		return;
+	}
+
+	if (route.kind !== "oauth-callback") {
+		const target = buildDeepLinkTarget(route);
+		if (target) windowFactory.revealTarget(target);
 		return;
 	}
 
@@ -224,6 +267,19 @@ registerDesktopBridge(ipcMain, {
 			.finally(() => {
 				activeRestart = null;
 			});
+	},
+
+	notify: (request) => {
+		// Built through the deep-link routing rather than by hand: clicking a
+		// notification and following a `kanban://` link must land in the same
+		// place, and two URL builders would drift apart.
+		const route = resolveNotificationRoute(request.projectId, request.taskId);
+		notificationController.notify({
+			key: request.key,
+			title: request.title,
+			body: request.body,
+			target: route ? (buildDeepLinkTarget(route) ?? undefined) : undefined,
+		});
 	},
 
 	getUpdateStatus: () => updateController.getStatus(),

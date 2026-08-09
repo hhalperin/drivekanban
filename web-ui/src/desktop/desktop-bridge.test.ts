@@ -11,6 +11,7 @@ interface FakeBridgeOverrides {
 	windows?: unknown;
 	runtime?: unknown;
 	updates?: unknown;
+	notifications?: unknown;
 }
 
 function fakeBridge(overrides: FakeBridgeOverrides = {}): Record<string, unknown> {
@@ -18,9 +19,10 @@ function fakeBridge(overrides: FakeBridgeOverrides = {}): Record<string, unknown
 		bridgeVersion: DESKTOP_BRIDGE_VERSION,
 		platform: "darwin",
 		appVersion: "1.2.3",
-		capabilities: ["windows", "runtime", "updates"],
+		capabilities: ["windows", "runtime", "updates", "notifications"],
 		windows: { openProject: vi.fn() },
 		runtime: { restart: vi.fn() },
+		notifications: { notify: vi.fn() },
 		updates: {
 			getStatus: vi.fn(async () => ({ kind: "idle" })),
 			check: vi.fn(),
@@ -69,7 +71,7 @@ describe("createDesktopClient — handshake", () => {
 		expect(client?.bridgeVersion).toBe(DESKTOP_BRIDGE_VERSION);
 		expect(client?.platform).toBe("darwin");
 		expect(client?.appVersion).toBe("1.2.3");
-		expect(client?.capabilities.slice().sort()).toEqual(["runtime", "updates", "windows"]);
+		expect(client?.capabilities.slice().sort()).toEqual(["notifications", "runtime", "updates", "windows"]);
 	});
 
 	it("normalises an unrecognised platform to 'other'", () => {
@@ -232,6 +234,35 @@ describe("createDesktopClient — method dispatch", () => {
 		expect(() => client?.windows.openProject("proj-1")).not.toThrow();
 		expect(() => client?.runtime.restart()).not.toThrow();
 		expect(openProject).not.toHaveBeenCalled();
+	});
+
+	it("forwards a notification request", () => {
+		const notify = vi.fn();
+		const client = createDesktopClient(fakeBridge({ notifications: { notify } }));
+
+		client?.notifications.notify({
+			key: "ws:task:123",
+			title: "Ready for review",
+			body: "Task 1",
+			projectId: "my-app",
+			taskId: "t-1",
+		});
+
+		expect(notify).toHaveBeenCalledExactlyOnceWith({
+			key: "ws:task:123",
+			title: "Ready for review",
+			body: "Task 1",
+			projectId: "my-app",
+			taskId: "t-1",
+		});
+	});
+
+	it("drops notifications when the capability is absent", () => {
+		const notify = vi.fn();
+		const client = createDesktopClient(fakeBridge({ capabilities: ["windows"], notifications: { notify } }));
+
+		expect(() => client?.notifications.notify({ key: "k", title: "t", body: "b" })).not.toThrow();
+		expect(notify).not.toHaveBeenCalled();
 	});
 
 	it("forwards update check and install", () => {

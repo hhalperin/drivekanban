@@ -1,6 +1,7 @@
 import { dialog, type BrowserWindow } from "electron";
 
 import type { DesktopBridgeBootstrap } from "./bridge/contract.js";
+import type { DeepLinkTarget } from "./protocol-handler.js";
 import { WindowRegistry } from "./window-registry.js";
 import {
 	type PersistedWindowState,
@@ -67,6 +68,56 @@ export class WindowFactory {
 
 		this.opts.onMenuDirty();
 		return window;
+	}
+
+	/**
+	 * Surface a deep-link target: focus the window already bound to that
+	 * project and navigate it, or open a new one.
+	 *
+	 * Reusing the existing window is the point. Opening a fresh window per
+	 * link would leave a user who clicks several notifications with a pile of
+	 * duplicates for the same project.
+	 */
+	revealTarget(target: DeepLinkTarget): void {
+		const runtimeUrl = this.opts.orchestrator.getUrl();
+		if (!runtimeUrl) {
+			// Nothing is navigable before the runtime is up. Dropping the link
+			// is correct — `main.ts` queues links that arrive during startup.
+			console.warn(
+				"[desktop] Ignoring deep link while the runtime is unavailable.",
+			);
+			return;
+		}
+
+		const url = new URL(runtimeUrl);
+		url.pathname = target.pathname;
+		url.search = target.search;
+		const href = url.toString();
+
+		const existing = this.opts.registry.findByProjectId(target.projectId);
+		if (!existing) {
+			this.create({ projectId: target.projectId, initialPath: null });
+			// `create` loads the project's base URL; follow up with the exact
+			// target so a task link lands on the task rather than the board.
+			const created = this.opts.registry.findByProjectId(target.projectId);
+			if (created) this.navigateAndFocus(created.window, href);
+			return;
+		}
+
+		this.navigateAndFocus(existing.window, href);
+	}
+
+	private navigateAndFocus(window: BrowserWindow, href: string): void {
+		if (window.isDestroyed()) return;
+		window.loadURL(href).catch((err: unknown) => {
+			console.warn(
+				"[desktop] Deep-link navigation failed:",
+				err instanceof Error ? err.message : err,
+			);
+		});
+		if (window.isMinimized()) window.restore();
+		window.show();
+		window.focus();
 	}
 
 	showDisconnectedScreen(): void {

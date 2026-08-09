@@ -34,7 +34,7 @@ describe("isDesktopCapability", () => {
 	});
 
 	it("rejects unknown strings and non-strings", () => {
-		expect(isDesktopCapability("notifications")).toBe(false);
+		expect(isDesktopCapability("teleportation")).toBe(false);
 		expect(isDesktopCapability("")).toBe(false);
 		expect(isDesktopCapability(null)).toBe(false);
 		expect(isDesktopCapability(42)).toBe(false);

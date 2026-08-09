@@ -20,6 +20,29 @@ export type OpenProjectWindowPayload = z.infer<
 >;
 
 /**
+ * Notification text is bounded so a runaway renderer can't push megabyte
+ * strings into the OS notification centre. The limits are generous next to
+ * what any platform actually renders — macOS and Windows both truncate far
+ * sooner — so clamping here costs nothing a user would see.
+ */
+export const notifyPayloadSchema = z
+	.object({
+		key: z.string().trim().min(1).max(200),
+		title: z.string().trim().min(1).max(200),
+		body: z.string().max(1_000),
+		projectId: z.string().trim().min(1).optional(),
+		taskId: z.string().trim().min(1).optional(),
+	})
+	// A task id without its project can't be turned into a URL — the web UI
+	// addresses tasks as `/<projectId>?task=<id>` — so reject the pair rather
+	// than shipping a notification whose click does nothing.
+	.refine((value) => (value.taskId ? Boolean(value.projectId) : true), {
+		message: "taskId requires projectId",
+	});
+
+export type NotifyPayload = z.infer<typeof notifyPayloadSchema>;
+
+/**
  * Shared by every channel that takes no arguments. Modelled explicitly
  * rather than skipping validation, so a payload-less channel that later
  * grows a payload can't silently start accepting unvalidated input.

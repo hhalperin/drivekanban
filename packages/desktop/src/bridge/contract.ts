@@ -44,7 +44,12 @@ export const MIN_SUPPORTED_DESKTOP_BRIDGE_VERSION = 1;
 /** The property `contextBridge` exposes on `window`. */
 export const DESKTOP_BRIDGE_GLOBAL = "desktop";
 
-export const DESKTOP_CAPABILITIES = ["windows", "runtime", "updates"] as const;
+export const DESKTOP_CAPABILITIES = [
+	"windows",
+	"runtime",
+	"updates",
+	"notifications",
+] as const;
 
 export type DesktopCapability = (typeof DESKTOP_CAPABILITIES)[number];
 
@@ -81,6 +86,7 @@ export const DesktopChannel = {
 	GetUpdateStatus: "desktop:updates:get-status",
 	CheckForUpdates: "desktop:updates:check",
 	InstallUpdate: "desktop:updates:install",
+	Notify: "desktop:notifications:notify",
 	/** Main → renderer push. Not accepted as an inbound channel. */
 	UpdateStatusChanged: "desktop:updates:status-changed",
 } as const;
@@ -145,10 +151,35 @@ export interface DesktopUpdatesApi {
 	subscribe(listener: (status: DesktopUpdateStatus) => void): () => void;
 }
 
+export interface DesktopNotificationRequest {
+	/**
+	 * Stable identity for the underlying event. Repeat deliveries of the same
+	 * key are dropped by the shell — the runtime re-emits ready-for-review
+	 * state on reconnect, and a user returning from lunch should not get eight
+	 * copies of the same notification.
+	 */
+	readonly key: string;
+	readonly title: string;
+	readonly body: string;
+	/** Clicking the notification opens this task. Both or neither. */
+	readonly projectId?: string;
+	readonly taskId?: string;
+}
+
+export interface DesktopNotificationsApi {
+	/**
+	 * Post an OS notification. Fire-and-forget: the shell decides whether it
+	 * is a duplicate, or whether the app is already focused and the user has
+	 * therefore seen the event.
+	 */
+	notify(request: DesktopNotificationRequest): void;
+}
+
 export interface DesktopApi extends DesktopBridgeHandshake {
 	readonly windows: DesktopWindowsApi;
 	readonly runtime: DesktopRuntimeApi;
 	readonly updates: DesktopUpdatesApi;
+	readonly notifications: DesktopNotificationsApi;
 }
 
 /**

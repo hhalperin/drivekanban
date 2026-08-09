@@ -4,6 +4,7 @@ import {
 	DesktopChannel,
 	type DesktopUpdateStatus,
 } from "../src/bridge/contract.js";
+import type { NotifyPayload } from "../src/bridge/ipc-schemas.js";
 import {
 	type IpcMainLike,
 	registerDesktopBridge,
@@ -59,6 +60,7 @@ let handlers: {
 	getUpdateStatus: Mock<() => DesktopUpdateStatus>;
 	checkForUpdates: Mock<() => void>;
 	installUpdate: Mock<() => void>;
+	notify: Mock<(request: NotifyPayload) => void>;
 };
 let warn: ReturnType<typeof vi.spyOn>;
 
@@ -70,6 +72,7 @@ beforeEach(() => {
 		getUpdateStatus: vi.fn(() => ({ kind: "idle" }) as const),
 		checkForUpdates: vi.fn(),
 		installUpdate: vi.fn(),
+		notify: vi.fn(),
 	};
 	warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 	registerDesktopBridge(ipc, handlers);
@@ -90,6 +93,7 @@ describe("registerDesktopBridge", () => {
 				DesktopChannel.RestartRuntime,
 				DesktopChannel.CheckForUpdates,
 				DesktopChannel.InstallUpdate,
+				DesktopChannel.Notify,
 			].sort(),
 		);
 	});

@@ -184,6 +184,23 @@ export class WindowRegistry {
 		return window;
 	}
 
+	/**
+	 * The live window bound to `projectId`, if one exists.
+	 *
+	 * Prefers the most recently focused match: a user with two windows on the
+	 * same project expects a deep link to surface the one they were last
+	 * looking at, not whichever happens to sort first.
+	 */
+	findByProjectId(projectId: string): WindowEntry | null {
+		let fallback: WindowEntry | null = null;
+		for (const entry of this.windows.values()) {
+			if (entry.window.isDestroyed() || entry.projectId !== projectId) continue;
+			if (entry.window.id === this.lastFocusedId) return entry;
+			fallback ??= entry;
+		}
+		return fallback;
+	}
+
 	getVisible(): WindowEntry[] {
 		return [...this.windows.values()].filter(
 			(entry) => !entry.window.isDestroyed() && entry.window.isVisible(),

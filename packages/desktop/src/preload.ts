@@ -5,6 +5,7 @@ import {
 	DESKTOP_BRIDGE_VERSION,
 	type DesktopApi,
 	DesktopChannel,
+	type DesktopNotificationRequest,
 	type DesktopUpdateStatus,
 	parseBridgeBootstrapArg,
 	toDesktopPlatform,
@@ -38,6 +39,12 @@ const desktopApi: DesktopApi = {
 	runtime: {
 		restart(): void {
 			ipcRenderer.send(DesktopChannel.RestartRuntime);
+		},
+	},
+
+	notifications: {
+		notify(request: DesktopNotificationRequest): void {
+			ipcRenderer.send(DesktopChannel.Notify, request);
 		},
 	},
 

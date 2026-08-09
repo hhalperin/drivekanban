@@ -1,7 +1,7 @@
 export const KANBAN_PROTOCOL = "kanban";
 export const OAUTH_CALLBACK_PATH = "/oauth/callback";
 
-interface ParsedProtocolUrl {
+export interface ParsedProtocolUrl {
 	raw: string;
 	pathname: string;
 	searchParams: URLSearchParams;
@@ -31,6 +31,91 @@ export function parseProtocolUrl(raw: string): ParsedProtocolUrl | null {
 		searchParams: url.searchParams,
 		isOAuthCallback: pathname === OAUTH_CALLBACK_PATH,
 	};
+}
+
+/**
+ * A `kanban://` link resolved to something the app can act on.
+ *
+ * The project id is part of the *path* for task links rather than a query
+ * parameter, because the web UI addresses a task as `/<projectId>?task=<id>`
+ * — a bare `kanban://task/<id>` could not be turned into a URL without first
+ * knowing which project owns it.
+ */
+export type DeepLinkRoute =
+	| { kind: "oauth-callback"; searchParams: URLSearchParams }
+	| { kind: "project"; projectId: string }
+	| { kind: "task"; projectId: string; taskId: string };
+
+/** Where a route lands inside the runtime origin. */
+export interface DeepLinkTarget {
+	projectId: string;
+	pathname: string;
+	/** Leading `?` included, or empty. */
+	search: string;
+}
+
+function decodeSegment(segment: string): string | null {
+	if (!segment) return null;
+	try {
+		const decoded = decodeURIComponent(segment).trim();
+		return decoded.length > 0 ? decoded : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Classify a parsed `kanban://` URL. Returns `null` for anything this build
+ * doesn't recognise, so the caller can log it rather than silently dropping
+ * a link the user clicked.
+ */
+export function resolveDeepLinkRoute(
+	parsed: ParsedProtocolUrl,
+): DeepLinkRoute | null {
+	if (parsed.isOAuthCallback) {
+		return { kind: "oauth-callback", searchParams: parsed.searchParams };
+	}
+
+	const segments = parsed.pathname.split("/").filter(Boolean);
+	if (segments[0] !== "project") return null;
+
+	const projectId = decodeSegment(segments[1] ?? "");
+	if (!projectId) return null;
+
+	if (segments.length === 2) {
+		return { kind: "project", projectId };
+	}
+
+	if (segments.length === 4 && segments[2] === "task") {
+		const taskId = decodeSegment(segments[3] ?? "");
+		if (!taskId) return null;
+		return { kind: "task", projectId, taskId };
+	}
+
+	return null;
+}
+
+/**
+ * Map a navigable route onto a runtime path. OAuth callbacks return `null`:
+ * they are relayed to the runtime's HTTP endpoint rather than navigated to.
+ */
+export function buildDeepLinkTarget(route: DeepLinkRoute): DeepLinkTarget | null {
+	switch (route.kind) {
+		case "oauth-callback":
+			return null;
+		case "project":
+			return {
+				projectId: route.projectId,
+				pathname: `/${encodeURIComponent(route.projectId)}`,
+				search: "",
+			};
+		case "task":
+			return {
+				projectId: route.projectId,
+				pathname: `/${encodeURIComponent(route.projectId)}`,
+				search: `?task=${encodeURIComponent(route.taskId)}`,
+			};
+	}
 }
 
 export interface ElectronAppLike {
