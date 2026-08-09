@@ -6,10 +6,10 @@
  * free of Electron imports and is testable with a fake `ipcMain`.
  */
 
-import { DesktopChannel } from "./contract.js";
+import { DesktopChannel, type DesktopUpdateStatus } from "./contract.js";
 import {
+	emptyPayloadSchema,
 	openProjectWindowPayloadSchema,
-	restartRuntimePayloadSchema,
 } from "./ipc-schemas.js";
 
 /**
@@ -21,11 +21,18 @@ export interface IpcMainLike {
 		channel: string,
 		listener: (event: unknown, ...args: unknown[]) => void,
 	): unknown;
+	handle(
+		channel: string,
+		listener: (event: unknown, ...args: unknown[]) => unknown,
+	): unknown;
 }
 
 export interface DesktopBridgeHandlers {
 	openProjectWindow(projectId: string): void;
 	restartRuntime(): void;
+	getUpdateStatus(): DesktopUpdateStatus;
+	checkForUpdates(): void;
+	installUpdate(): void;
 }
 
 function warnInvalidPayload(channel: string, error: unknown): void {
@@ -51,12 +58,33 @@ export function registerDesktopBridge(
 		handlers.openProjectWindow(parsed.data.projectId);
 	});
 
-	ipc.on(DesktopChannel.RestartRuntime, (_event, payload) => {
-		const parsed = restartRuntimePayloadSchema.safeParse(payload);
+	registerEmptyPayloadChannel(ipc, DesktopChannel.RestartRuntime, () =>
+		handlers.restartRuntime(),
+	);
+	registerEmptyPayloadChannel(ipc, DesktopChannel.CheckForUpdates, () =>
+		handlers.checkForUpdates(),
+	);
+	registerEmptyPayloadChannel(ipc, DesktopChannel.InstallUpdate, () =>
+		handlers.installUpdate(),
+	);
+
+	// `handle`, not `on`: the renderer needs the current status synchronously
+	// on mount, before any push has been emitted, or a window opened
+	// mid-download would show "idle" until the next progress tick.
+	ipc.handle(DesktopChannel.GetUpdateStatus, () => handlers.getUpdateStatus());
+}
+
+function registerEmptyPayloadChannel(
+	ipc: IpcMainLike,
+	channel: string,
+	handle: () => void,
+): void {
+	ipc.on(channel, (_event, payload) => {
+		const parsed = emptyPayloadSchema.safeParse(payload);
 		if (!parsed.success) {
-			warnInvalidPayload(DesktopChannel.RestartRuntime, parsed.error);
+			warnInvalidPayload(channel, parsed.error);
 			return;
 		}
-		handlers.restartRuntime();
+		handle();
 	});
 }

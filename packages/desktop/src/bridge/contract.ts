@@ -44,7 +44,7 @@ export const MIN_SUPPORTED_DESKTOP_BRIDGE_VERSION = 1;
 /** The property `contextBridge` exposes on `window`. */
 export const DESKTOP_BRIDGE_GLOBAL = "desktop";
 
-export const DESKTOP_CAPABILITIES = ["windows", "runtime"] as const;
+export const DESKTOP_CAPABILITIES = ["windows", "runtime", "updates"] as const;
 
 export type DesktopCapability = (typeof DESKTOP_CAPABILITIES)[number];
 
@@ -78,6 +78,11 @@ export function toDesktopPlatform(platform: string): DesktopPlatform {
 export const DesktopChannel = {
 	OpenProjectWindow: "desktop:windows:open-project",
 	RestartRuntime: "desktop:runtime:restart",
+	GetUpdateStatus: "desktop:updates:get-status",
+	CheckForUpdates: "desktop:updates:check",
+	InstallUpdate: "desktop:updates:install",
+	/** Main → renderer push. Not accepted as an inbound channel. */
+	UpdateStatusChanged: "desktop:updates:status-changed",
 } as const;
 
 export type DesktopChannelName =
@@ -105,9 +110,45 @@ export interface DesktopRuntimeApi {
 	restart(): void;
 }
 
+/**
+ * Lifecycle of a desktop self-update.
+ *
+ * `unsupported` is a first-class state rather than an error: a dev build or
+ * an install the updater can't manage has nothing wrong with it, and the UI
+ * should say so instead of showing a failure the user can't act on.
+ */
+export type DesktopUpdateStatus =
+	| { readonly kind: "unsupported"; readonly reason: string }
+	| { readonly kind: "idle" }
+	| { readonly kind: "checking" }
+	| { readonly kind: "up-to-date" }
+	| { readonly kind: "available"; readonly version: string }
+	| {
+			readonly kind: "downloading";
+			readonly version: string;
+			readonly percent: number;
+	  }
+	| { readonly kind: "ready"; readonly version: string }
+	| { readonly kind: "error"; readonly message: string };
+
+export interface DesktopUpdatesApi {
+	/** Current status. Resolves immediately — the shell holds it in memory. */
+	getStatus(): Promise<DesktopUpdateStatus>;
+	/** Ask the shell to check now. Progress arrives through `subscribe`. */
+	check(): void;
+	/**
+	 * Quit and install a downloaded update. Only meaningful in the `ready`
+	 * state; the shell ignores it otherwise.
+	 */
+	install(): void;
+	/** Returns an unsubscribe function. */
+	subscribe(listener: (status: DesktopUpdateStatus) => void): () => void;
+}
+
 export interface DesktopApi extends DesktopBridgeHandshake {
 	readonly windows: DesktopWindowsApi;
 	readonly runtime: DesktopRuntimeApi;
+	readonly updates: DesktopUpdatesApi;
 }
 
 /**

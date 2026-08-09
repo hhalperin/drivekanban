@@ -10,6 +10,7 @@ interface FakeBridgeOverrides {
 	capabilities?: unknown;
 	windows?: unknown;
 	runtime?: unknown;
+	updates?: unknown;
 }
 
 function fakeBridge(overrides: FakeBridgeOverrides = {}): Record<string, unknown> {
@@ -17,9 +18,15 @@ function fakeBridge(overrides: FakeBridgeOverrides = {}): Record<string, unknown
 		bridgeVersion: DESKTOP_BRIDGE_VERSION,
 		platform: "darwin",
 		appVersion: "1.2.3",
-		capabilities: ["windows", "runtime"],
+		capabilities: ["windows", "runtime", "updates"],
 		windows: { openProject: vi.fn() },
 		runtime: { restart: vi.fn() },
+		updates: {
+			getStatus: vi.fn(async () => ({ kind: "idle" })),
+			check: vi.fn(),
+			install: vi.fn(),
+			subscribe: vi.fn(() => vi.fn()),
+		},
 		...overrides,
 	};
 }
@@ -62,7 +69,7 @@ describe("createDesktopClient — handshake", () => {
 		expect(client?.bridgeVersion).toBe(DESKTOP_BRIDGE_VERSION);
 		expect(client?.platform).toBe("darwin");
 		expect(client?.appVersion).toBe("1.2.3");
-		expect(client?.capabilities.slice().sort()).toEqual(["runtime", "windows"]);
+		expect(client?.capabilities.slice().sort()).toEqual(["runtime", "updates", "windows"]);
 	});
 
 	it("normalises an unrecognised platform to 'other'", () => {
@@ -123,6 +130,80 @@ describe("createDesktopClient — capabilities", () => {
 	it("drops a capability whose namespace is missing entirely", () => {
 		expect(createDesktopClient(fakeBridge({ runtime: undefined }))?.has("runtime")).toBe(false);
 	});
+
+	it("requires every updates method before claiming the capability", () => {
+		// A half-wired namespace would let the UI render an update prompt whose
+		// button does nothing.
+		const client = createDesktopClient(
+			fakeBridge({
+				updates: {
+					getStatus: vi.fn(async () => ({ kind: "idle" })),
+					check: vi.fn(),
+					// `install` and `subscribe` missing.
+				},
+			}),
+		);
+
+		expect(client?.has("updates")).toBe(false);
+	});
+});
+
+describe("createDesktopClient — updates fallbacks", () => {
+	it("reports unsupported when the capability is absent", async () => {
+		const client = createDesktopClient(fakeBridge({ capabilities: ["windows"] }));
+
+		await expect(client?.updates.getStatus()).resolves.toMatchObject({
+			kind: "unsupported",
+		});
+	});
+
+	it("turns a rejected getStatus into an error status", async () => {
+		// The invoke round-trip rejects if the window is tearing down. The
+		// caller has no better recovery than displaying it, so surface it as a
+		// status rather than an unhandled rejection.
+		const client = createDesktopClient(
+			fakeBridge({
+				updates: {
+					getStatus: vi.fn(async () => {
+						throw new Error("window destroyed");
+					}),
+					check: vi.fn(),
+					install: vi.fn(),
+					subscribe: vi.fn(() => vi.fn()),
+				},
+			}),
+		);
+
+		await expect(client?.updates.getStatus()).resolves.toEqual({
+			kind: "error",
+			message: "window destroyed",
+		});
+	});
+
+	it("returns a usable unsubscribe when the shell returns none", () => {
+		const client = createDesktopClient(
+			fakeBridge({
+				updates: {
+					getStatus: vi.fn(async () => ({ kind: "idle" })),
+					check: vi.fn(),
+					install: vi.fn(),
+					subscribe: vi.fn(() => undefined),
+				},
+			}),
+		);
+
+		const unsubscribe = client?.updates.subscribe(() => {});
+
+		expect(() => unsubscribe?.()).not.toThrow();
+	});
+
+	it("subscribing without the capability is inert", () => {
+		const client = createDesktopClient(fakeBridge({ capabilities: [] }));
+
+		expect(() => client?.updates.subscribe(() => {})()).not.toThrow();
+		expect(() => client?.updates.check()).not.toThrow();
+		expect(() => client?.updates.install()).not.toThrow();
+	});
 });
 
 describe("createDesktopClient — method dispatch", () => {
@@ -151,6 +232,27 @@ describe("createDesktopClient — method dispatch", () => {
 		expect(() => client?.windows.openProject("proj-1")).not.toThrow();
 		expect(() => client?.runtime.restart()).not.toThrow();
 		expect(openProject).not.toHaveBeenCalled();
+	});
+
+	it("forwards update check and install", () => {
+		const check = vi.fn();
+		const install = vi.fn();
+		const client = createDesktopClient(
+			fakeBridge({
+				updates: {
+					getStatus: vi.fn(async () => ({ kind: "idle" })),
+					check,
+					install,
+					subscribe: vi.fn(() => vi.fn()),
+				},
+			}),
+		);
+
+		client?.updates.check();
+		client?.updates.install();
+
+		expect(check).toHaveBeenCalledOnce();
+		expect(install).toHaveBeenCalledOnce();
 	});
 
 	it("calls the shell method with the namespace as its receiver", () => {

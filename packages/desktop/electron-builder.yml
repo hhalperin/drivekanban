@@ -41,11 +41,26 @@ asarUnpack:
   - "node_modules/node-pty/**"
   - "**/*.node"
 
+# Update feed. Pinned explicitly rather than inferred from the git remote:
+# an inferred provider silently publishing to whichever repo happens to be
+# `origin` is a worse failure than one that needs a deliberate edit in a fork.
+publish:
+  provider: github
+  owner: cline
+  repo: kanban
+
 mac:
   category: public.app-category.developer-tools
   icon: build/icon.icns
+  # The zip target is not optional — electron-updater cannot apply an update
+  # from a DMG, so a mac build that ships only `dmg` has a working update
+  # *check* and no working update. The DMG stays for first-time installs.
   target:
     - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
       arch:
         - x64
         - arm64

@@ -20,8 +20,8 @@ export type OpenProjectWindowPayload = z.infer<
 >;
 
 /**
- * Restart carries no arguments. Modelled explicitly (rather than skipping
- * validation) so a payload-less channel that later grows a payload can't
- * silently start accepting unvalidated input.
+ * Shared by every channel that takes no arguments. Modelled explicitly
+ * rather than skipping validation, so a payload-less channel that later
+ * grows a payload can't silently start accepting unvalidated input.
  */
-export const restartRuntimePayloadSchema = z.undefined();
+export const emptyPayloadSchema = z.undefined();

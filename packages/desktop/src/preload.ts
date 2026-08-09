@@ -5,6 +5,7 @@ import {
 	DESKTOP_BRIDGE_VERSION,
 	type DesktopApi,
 	DesktopChannel,
+	type DesktopUpdateStatus,
 	parseBridgeBootstrapArg,
 	toDesktopPlatform,
 } from "./bridge/contract.js";
@@ -37,6 +38,35 @@ const desktopApi: DesktopApi = {
 	runtime: {
 		restart(): void {
 			ipcRenderer.send(DesktopChannel.RestartRuntime);
+		},
+	},
+
+	updates: {
+		getStatus(): Promise<DesktopUpdateStatus> {
+			return ipcRenderer.invoke(
+				DesktopChannel.GetUpdateStatus,
+			) as Promise<DesktopUpdateStatus>;
+		},
+
+		check(): void {
+			ipcRenderer.send(DesktopChannel.CheckForUpdates);
+		},
+
+		install(): void {
+			ipcRenderer.send(DesktopChannel.InstallUpdate);
+		},
+
+		subscribe(listener: (status: DesktopUpdateStatus) => void): () => void {
+			// The renderer's callback is never handed to `ipcRenderer` directly:
+			// doing so would leak the raw IpcRendererEvent (and its `sender`)
+			// across the context bridge. Only the status payload crosses.
+			const forward = (_event: unknown, status: DesktopUpdateStatus): void => {
+				listener(status);
+			};
+			ipcRenderer.on(DesktopChannel.UpdateStatusChanged, forward);
+			return () => {
+				ipcRenderer.off(DesktopChannel.UpdateStatusChanged, forward);
+			};
 		},
 	},
 };

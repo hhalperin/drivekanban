@@ -15,6 +15,15 @@ interface UseUpdateNotificationResult {
 	dismiss: () => void;
 }
 
+interface UseUpdateNotificationOptions {
+	/**
+	 * When false, no polling happens and no update is ever surfaced. Used by
+	 * the desktop shell, where the runtime's npm-based update path does not
+	 * apply — see {@link ../components/update-notification-controller}.
+	 */
+	enabled?: boolean;
+}
+
 /**
  * Polls the runtime for update status and surfaces a pending update for the UI
  * to render. Relies on the runtime's startup auto-update check: the server
@@ -22,7 +31,9 @@ interface UseUpdateNotificationResult {
  * mount, retry once shortly after, then fall back to a slow poll. The user
  * can dismiss the prompt for the current session via {@link UseUpdateNotificationResult.dismiss}.
  */
-export function useUpdateNotification(): UseUpdateNotificationResult {
+export function useUpdateNotification({
+	enabled = true,
+}: UseUpdateNotificationOptions = {}): UseUpdateNotificationResult {
 	const [availableUpdate, setAvailableUpdate] = useState<AvailableUpdate | null>(null);
 	const dismissedRef = useRef(false);
 
@@ -32,6 +43,9 @@ export function useUpdateNotification(): UseUpdateNotificationResult {
 	}, []);
 
 	useEffect(() => {
+		if (!enabled) {
+			return;
+		}
 		let cancelled = false;
 
 		async function checkOnce(): Promise<void> {
@@ -77,7 +91,7 @@ export function useUpdateNotification(): UseUpdateNotificationResult {
 			clearTimeout(earlyRetry);
 			clearInterval(interval);
 		};
-	}, []);
+	}, [enabled]);
 
 	return { availableUpdate, dismiss };
 }

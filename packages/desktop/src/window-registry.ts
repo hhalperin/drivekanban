@@ -287,6 +287,28 @@ export class WindowRegistry {
 		return baseUrl;
 	}
 
+	/**
+	 * Push a message to every live window's renderer.
+	 *
+	 * Sends are attempted per window and failures are swallowed with a
+	 * warning: a window torn down between the liveness check and the send
+	 * throws, and one dying window must not stop the others from being
+	 * notified.
+	 */
+	broadcast(channel: string, payload: unknown): void {
+		for (const entry of this.windows.values()) {
+			if (entry.window.isDestroyed()) continue;
+			try {
+				entry.window.webContents.send(channel, payload);
+			} catch (err) {
+				console.warn(
+					`[desktop] broadcast of ${channel} to window ${entry.window.id} failed:`,
+					err instanceof Error ? err.message : err,
+				);
+			}
+		}
+	}
+
 	async loadUrlInAllWindows(baseUrl: string): Promise<void> {
 		const tasks: Array<{ id: number; promise: Promise<void> }> = [];
 		for (const entry of this.windows.values()) {

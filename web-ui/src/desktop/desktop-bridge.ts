@@ -15,6 +15,8 @@ import {
 	type DesktopApi,
 	type DesktopCapability,
 	type DesktopRuntimeApi,
+	type DesktopUpdateStatus,
+	type DesktopUpdatesApi,
 	type DesktopWindowsApi,
 	isDesktopCapability,
 	MIN_SUPPORTED_DESKTOP_BRIDGE_VERSION,
@@ -39,12 +41,22 @@ function readMethod(
 	source: Record<string, unknown>,
 	namespace: string,
 	method: string,
-): ((...args: never[]) => void) | null {
+): ((...args: never[]) => unknown) | null {
 	const ns = source[namespace];
 	if (!isRecord(ns)) return null;
 	const fn = ns[method];
-	return typeof fn === "function" ? (fn as (...args: never[]) => void).bind(ns) : null;
+	return typeof fn === "function" ? (fn as (...args: never[]) => unknown).bind(ns) : null;
 }
+
+/**
+ * Status reported when the shell can't tell us anything — a browser, or a
+ * shell whose `updates` namespace failed validation. Distinct from an error:
+ * nothing went wrong, there is simply no self-update mechanism here.
+ */
+const UPDATES_UNAVAILABLE: DesktopUpdateStatus = {
+	kind: "unsupported",
+	reason: "Automatic updates are unavailable in this build.",
+};
 
 /**
  * Validate a candidate bridge object and wrap it in a client.
@@ -79,9 +91,19 @@ export function createDesktopClient(candidate: unknown): DesktopClient | null {
 	const advertised = new Set(
 		Array.isArray(candidate.capabilities) ? candidate.capabilities.filter(isDesktopCapability) : [],
 	);
+	const getUpdateStatus = readMethod(candidate, "updates", "getStatus");
+	const checkForUpdates = readMethod(candidate, "updates", "check");
+	const installUpdate = readMethod(candidate, "updates", "install");
+	const subscribeToUpdates = readMethod(candidate, "updates", "subscribe");
+
 	const effective = new Set<DesktopCapability>();
 	if (openProject && advertised.has("windows")) effective.add("windows");
 	if (restart && advertised.has("runtime")) effective.add("runtime");
+	// Every method has to be present: a half-wired namespace would let the UI
+	// render an update prompt it can't act on.
+	if (getUpdateStatus && checkForUpdates && installUpdate && subscribeToUpdates && advertised.has("updates")) {
+		effective.add("updates");
+	}
 
 	const windows: DesktopWindowsApi = {
 		openProject(projectId) {
@@ -95,6 +117,37 @@ export function createDesktopClient(candidate: unknown): DesktopClient | null {
 		},
 	};
 
+	const updates: DesktopUpdatesApi = {
+		async getStatus() {
+			if (!effective.has("updates")) return UPDATES_UNAVAILABLE;
+			try {
+				return (await getUpdateStatus?.()) as DesktopUpdateStatus;
+			} catch (error) {
+				// An IPC round-trip can reject if the window is tearing down.
+				// Surface it as an error status rather than rejecting into a
+				// caller that has no better recovery than showing the same thing.
+				return {
+					kind: "error",
+					message: error instanceof Error ? error.message : String(error),
+				};
+			}
+		},
+
+		check() {
+			if (effective.has("updates")) checkForUpdates?.();
+		},
+
+		install() {
+			if (effective.has("updates")) installUpdate?.();
+		},
+
+		subscribe(listener) {
+			if (!effective.has("updates")) return () => {};
+			const unsubscribe = subscribeToUpdates?.(listener as never);
+			return typeof unsubscribe === "function" ? (unsubscribe as () => void) : () => {};
+		},
+	};
+
 	return {
 		bridgeVersion,
 		platform: toDesktopPlatform(typeof candidate.platform === "string" ? candidate.platform : ""),
@@ -102,6 +155,7 @@ export function createDesktopClient(candidate: unknown): DesktopClient | null {
 		capabilities: [...effective],
 		windows,
 		runtime,
+		updates,
 		has: (capability) => effective.has(capability),
 	};
 }

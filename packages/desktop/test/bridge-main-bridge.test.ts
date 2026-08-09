@@ -1,6 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 
-import { DesktopChannel } from "../src/bridge/contract.js";
+import {
+	DesktopChannel,
+	type DesktopUpdateStatus,
+} from "../src/bridge/contract.js";
 import {
 	type IpcMainLike,
 	registerDesktopBridge,
@@ -10,9 +13,21 @@ type Listener = (event: unknown, ...args: unknown[]) => void;
 
 class FakeIpcMain implements IpcMainLike {
 	private readonly listeners = new Map<string, Listener>();
+	private readonly handlers = new Map<
+		string,
+		(event: unknown, ...args: unknown[]) => unknown
+	>();
 
 	on(channel: string, listener: Listener): this {
 		this.listeners.set(channel, listener);
+		return this;
+	}
+
+	handle(
+		channel: string,
+		handler: (event: unknown, ...args: unknown[]) => unknown,
+	): this {
+		this.handlers.set(channel, handler);
 		return this;
 	}
 
@@ -22,18 +37,40 @@ class FakeIpcMain implements IpcMainLike {
 		listener({}, ...args);
 	}
 
+	invoke(channel: string, ...args: unknown[]): unknown {
+		const handler = this.handlers.get(channel);
+		if (!handler) throw new Error(`No handler registered for ${channel}`);
+		return handler({}, ...args);
+	}
+
 	get channels(): string[] {
 		return [...this.listeners.keys()];
+	}
+
+	get invokableChannels(): string[] {
+		return [...this.handlers.keys()];
 	}
 }
 
 let ipc: FakeIpcMain;
-let handlers: { openProjectWindow: ReturnType<typeof vi.fn>; restartRuntime: ReturnType<typeof vi.fn> };
+let handlers: {
+	openProjectWindow: Mock<(projectId: string) => void>;
+	restartRuntime: Mock<() => void>;
+	getUpdateStatus: Mock<() => DesktopUpdateStatus>;
+	checkForUpdates: Mock<() => void>;
+	installUpdate: Mock<() => void>;
+};
 let warn: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
 	ipc = new FakeIpcMain();
-	handlers = { openProjectWindow: vi.fn(), restartRuntime: vi.fn() };
+	handlers = {
+		openProjectWindow: vi.fn(),
+		restartRuntime: vi.fn(),
+		getUpdateStatus: vi.fn(() => ({ kind: "idle" }) as const),
+		checkForUpdates: vi.fn(),
+		installUpdate: vi.fn(),
+	};
 	warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 	registerDesktopBridge(ipc, handlers);
 });
@@ -46,10 +83,57 @@ afterEach(() => {
 });
 
 describe("registerDesktopBridge", () => {
-	it("registers exactly the declared channels", () => {
+	it("registers exactly the declared send channels", () => {
 		expect(ipc.channels.sort()).toEqual(
-			[DesktopChannel.OpenProjectWindow, DesktopChannel.RestartRuntime].sort(),
+			[
+				DesktopChannel.OpenProjectWindow,
+				DesktopChannel.RestartRuntime,
+				DesktopChannel.CheckForUpdates,
+				DesktopChannel.InstallUpdate,
+			].sort(),
 		);
+	});
+
+	it("registers exactly the declared invoke channels", () => {
+		expect(ipc.invokableChannels).toEqual([DesktopChannel.GetUpdateStatus]);
+	});
+
+	it("does not accept the push-only status channel as inbound", () => {
+		// `UpdateStatusChanged` is main → renderer. Accepting it inbound would
+		// let a compromised renderer forge status updates for every window.
+		expect(ipc.channels).not.toContain(DesktopChannel.UpdateStatusChanged);
+		expect(ipc.invokableChannels).not.toContain(
+			DesktopChannel.UpdateStatusChanged,
+		);
+	});
+});
+
+describe("update channels", () => {
+	it("returns the current status from the invoke handler", () => {
+		handlers.getUpdateStatus.mockReturnValue({ kind: "ready", version: "2.0.0" });
+
+		expect(ipc.invoke(DesktopChannel.GetUpdateStatus)).toEqual({
+			kind: "ready",
+			version: "2.0.0",
+		});
+	});
+
+	it("forwards check and install", () => {
+		ipc.send(DesktopChannel.CheckForUpdates);
+		ipc.send(DesktopChannel.InstallUpdate);
+
+		expect(handlers.checkForUpdates).toHaveBeenCalledOnce();
+		expect(handlers.installUpdate).toHaveBeenCalledOnce();
+	});
+
+	it.each([
+		[DesktopChannel.CheckForUpdates, "checkForUpdates"],
+		[DesktopChannel.InstallUpdate, "installUpdate"],
+	] as const)("drops a payload sent on %s", (channel, handlerName) => {
+		ipc.send(channel, { sneaky: true });
+
+		expect(handlers[handlerName]).not.toHaveBeenCalled();
+		expect(warn).toHaveBeenCalledOnce();
 	});
 });
 

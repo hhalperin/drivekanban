@@ -3,8 +3,17 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 import { AppMenu } from "./app-menu.js";
-import type { DesktopBridgeBootstrap } from "./bridge/contract.js";
+import {
+	type DesktopBridgeBootstrap,
+	type DesktopCapability,
+	DesktopChannel,
+} from "./bridge/contract.js";
 import { registerDesktopBridge } from "./bridge/main-bridge.js";
+import { createElectronUpdaterBackend } from "./updater/electron-updater-backend.js";
+import {
+	resolveUpdateSupport,
+	UpdateController,
+} from "./updater/update-controller.js";
 import { relayOAuthCallback } from "./oauth-relay.js";
 import {
 	extractProtocolUrlFromArgv,
@@ -19,6 +28,7 @@ const BACKGROUND_COLOR = "#1F2428";
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3484;
 const HEALTH_TIMEOUT_MS = 3_000;
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 
 const preloadPath = path.join(import.meta.dirname, "preload.js");
 const disconnectedHtmlPath = path.join(import.meta.dirname, "disconnected.html");
@@ -43,13 +53,29 @@ const orchestrator = new RuntimeOrchestrator({
 	resolveCliShimPath,
 });
 
+const updateSupport = resolveUpdateSupport({ isPackaged: app.isPackaged });
+const updateController = new UpdateController(
+	// Instantiating the backend touches `electron-updater`, which resolves a
+	// provider from the packaged app metadata. In an unpackaged run there is
+	// none, so skip it entirely rather than letting a constructor throw take
+	// down startup.
+	updateSupport.supported ? createElectronUpdaterBackend() : null,
+	updateSupport,
+);
+
 // Advertised to the renderer at window-construction time. Every entry here
 // is a promise that the matching `window.desktop` namespace will actually do
 // something, so a capability is only listed once its main-process handler is
 // registered below — never speculatively.
+//
+// `updates` is advertised even when unsupported: the namespace works and
+// truthfully reports `{ kind: "unsupported" }`, which is what lets the UI
+// explain *why* rather than silently hiding the control.
+const bridgeCapabilities: DesktopCapability[] = ["windows", "runtime", "updates"];
+
 const bridgeBootstrap: DesktopBridgeBootstrap = {
 	appVersion: app.getVersion(),
-	capabilities: ["windows", "runtime"],
+	capabilities: bridgeCapabilities,
 };
 
 const windowFactory = new WindowFactory({
@@ -199,6 +225,16 @@ registerDesktopBridge(ipcMain, {
 				activeRestart = null;
 			});
 	},
+
+	getUpdateStatus: () => updateController.getStatus(),
+	checkForUpdates: () => updateController.check(),
+	installUpdate: () => updateController.install(),
+});
+
+// Every window mirrors the same update state, so the push goes to all of
+// them rather than only the focused one.
+updateController.subscribe((status) => {
+	registry.broadcast(DesktopChannel.UpdateStatusChanged, status);
 });
 
 
@@ -247,6 +283,16 @@ function wireAppLifecycle(): void {
 
 		menu.rebuild();
 		orchestrator.startAppNapPrevention();
+
+		// Check once at startup, then on a timer. The timer is the load-bearing
+		// half: this app is built for sessions that stay open for days, so a
+		// launch-only check would leave the longest-running installs — exactly
+		// the ones most worth updating — permanently stale.
+		updateController.check();
+		setInterval(
+			() => updateController.check(),
+			UPDATE_CHECK_INTERVAL_MS,
+		).unref();
 
 		// Register before the async connect() — otherwise a macOS Dock click
 		// during the initial health-check window (up to `HEALTH_TIMEOUT_MS`)
