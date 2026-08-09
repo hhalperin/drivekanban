@@ -13,6 +13,45 @@ Related docs:
 
 A session resuming without full context should reread this doc plus `packages/desktop/src/main.ts`, `packages/desktop/src/preload.ts`, and `packages/desktop/src/app-menu.ts` before touching anything.
 
+## Implementation status
+
+Sections 5–6 describe the plan as originally written. This table is the live
+record; where the two disagree, this table wins.
+
+| Slice | Status | Notes |
+|---|---|---|
+| 1. Bridge contract + `useDesktop()` | **Done** | Open question 6 resolved: a `@desktop-bridge` alias, matching the existing `@runtime-*` pattern, rather than a workspace package |
+| 2. Auto-update | **Done** | macOS `zip` target added — electron-updater cannot apply an update from a DMG |
+| 3. Windows + Linux targets, CI matrix | **Done** | Release workflow added; signing secrets still required (open question 2) |
+| 4. Crash/error reporting | **Deferred** | Reordered behind Tier 1: unverifiable here without a DSN, and lower value than presence |
+| 5. Native notifications + deep-link routing | **Done** | Routes are `kanban://project/<id>[/task/<id>]` — the project must be in the path, since the web UI addresses tasks as `/<projectId>?task=<id>` |
+| 6. Badges + attention signals | **Done** | Windows has no numeric taskbar badge without a rendered overlay per value; it gets the tray summary and attention flash instead |
+| 7. Tray + background running | **Partial** | Tray done. Background running / open-at-login not yet built |
+| 8. Quit safety | **Done** | Guards on running agents, not pending reviews |
+| 9. Action registry + native menu coverage | **Done** | Menu items use `registerAccelerator: false` so the renderer's hotkey handler stays the only binding |
+| 10. Command palette | **Done** | `mod+k`, reusing the existing `fzf` dependency |
+| 11–18 | **Not started** | Global shortcuts, window navigation, native pickers, context menu, drag-and-drop, recent projects / secure storage / zoom, log viewer / endpoint / sleep-wake, detached task windows |
+
+### Found by building, not by planning
+
+Three defects surfaced only from producing real artifacts and launching them,
+and none were reachable from typecheck or unit tests:
+
+1. **The packaged app crashed on launch.** `electron-updater` is CommonJS and
+   defines `autoUpdater` via `Object.defineProperty`, which cjs-module-lexer
+   cannot see, so a named ESM import threw only in a packaged build.
+2. The `deb` target failed: fpm needs a maintainer, derived from `author` only
+   when that field carries an email.
+3. The Linux binary was named `@kanbandesktop` — electron-builder derives it
+   from the npm package name, and a scoped name sanitizes badly. It landed in
+   the `.desktop` file's `Exec` and `Icon` fields.
+
+The lesson for the remaining slices: build and boot a packaged artifact before
+calling a desktop change done.
+
+Separately, the pre-commit hook only typechecked the root package, so type
+errors in `web-ui` and `packages/desktop` reached CI. It now checks all three.
+
 ---
 
 ## 1. Who the desktop power user is
