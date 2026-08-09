@@ -6,11 +6,23 @@
  * updater library lands here and nowhere else.
  */
 
-import { autoUpdater } from "electron-updater";
+// Default import, not `import { autoUpdater }`. electron-updater is CommonJS
+// and defines `autoUpdater` with `Object.defineProperty`, which cjs-module-lexer
+// cannot see — so a named import typechecks, passes every unit test, and then
+// throws `does not provide an export named 'autoUpdater'` the first time the
+// packaged ESM main process loads this file.
+//
+// The property is also a lazy getter that *constructs* a platform updater on
+// first access (reading `process.resourcesPath`), so it is read inside the
+// factory rather than at module scope: this module is imported unconditionally
+// by main.ts, but only unpacked builds should ever instantiate an updater.
+import electronUpdater from "electron-updater";
 
 import type { UpdaterBackend, UpdaterBackendEvent } from "./update-controller.js";
 
 export function createElectronUpdaterBackend(): UpdaterBackend {
+	const { autoUpdater } = electronUpdater;
+
 	// Download as soon as an update is found, but never install behind the
 	// user's back: a desktop app whose agents may be mid-task must not decide
 	// on its own when to quit. `install()` is an explicit user action.

@@ -1,0 +1,142 @@
+name: Desktop Release
+
+# Builds and publishes the Electron desktop app for every supported platform.
+#
+# Split from `publish.yml` on purpose: that workflow publishes the npm package
+# from a single ubuntu runner, while desktop artifacts must be produced on the
+# OS they target (macOS notarization needs macOS, NSIS needs Windows). Keeping
+# them separate also means a desktop signing failure can't block an npm
+# release, and vice versa.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build (example: v1.2.3)"
+        required: true
+        type: string
+      publish:
+        description: "Upload artifacts to the GitHub release feed"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: desktop-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      # One platform failing to sign should not discard the artifacts that
+      # built cleanly on the others.
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS
+            build_args: --mac
+          - os: windows-latest
+            name: Windows
+            build_args: --win
+          - os: ubuntu-latest
+            name: Linux
+            build_args: --linux
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve tag
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if ! git show-ref --verify --quiet "refs/tags/$TAG"; then
+            echo "Error: tag '$TAG' does not exist"
+            exit 1
+          fi
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]]; then
+            echo "Error: tag must match vX.Y.Z (with optional prerelease suffix)"
+            exit 1
+          fi
+          git checkout --detach "refs/tags/$TAG^{commit}"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: npm
+
+      # node-gyp still reaches for distutils, which 3.12 removed.
+      - name: Setup Python (for node-gyp)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install web-ui dependencies
+        run: npm ci --prefix web-ui
+
+      - name: Install desktop dependencies
+        run: npm ci --prefix packages/desktop
+
+      # Produces dist/cli.js plus dist/web-ui, which `stage:cli` copies into
+      # the app bundle. The desktop build fails loudly if this is skipped.
+      - name: Build runtime and web UI
+        run: npm run build
+        env:
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+          POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+
+      - name: Build desktop app
+        working-directory: packages/desktop
+        shell: bash
+        run: |
+          npm run stage:cli
+          npm run build:ts
+          npx electron-builder ${{ matrix.build_args }} \
+            --config electron-builder.yml \
+            ${{ inputs.publish && '--publish always' || '--publish never' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS signing + notarization. Absent on forks, where
+          # electron-builder falls back to an unsigned build rather than
+          # failing — which is what makes a fork's dry run still useful.
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows signing.
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+      # Uploaded even when publishing, so a release that later needs to be
+      # rolled back still has the exact artifacts attached to the run.
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kanban-desktop-${{ matrix.name }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            packages/desktop/out/*.dmg
+            packages/desktop/out/*.zip
+            packages/desktop/out/*.exe
+            packages/desktop/out/*.AppImage
+            packages/desktop/out/*.deb
+            packages/desktop/out/*.yml
+            packages/desktop/out/*.blockmap

@@ -75,3 +75,58 @@ mac:
 
 dmg:
   artifactName: "${productName}-${version}-${arch}.${ext}"
+
+win:
+  # 1024×1024 PNG extracted from icon.icns so every platform ships the same
+  # artwork; electron-builder derives the .ico from it.
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+
+nsis:
+  artifactName: "${productName}-${version}-${arch}-setup.${ext}"
+  # Per-user install by default. A per-machine install needs elevation, and
+  # electron-updater cannot apply an update to a location the running user
+  # can't write — which would leave Windows users silently stuck on the
+  # version they first installed.
+  perMachine: false
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+linux:
+  icon: build/icon.png
+  category: Development
+  # Without this the binary is named after the npm package rather than the
+  # product, and a scoped name sanitizes to `@kanbandesktop` — which lands in
+  # the .desktop file's Exec and Icon fields and breaks icon lookup.
+  executableName: kanban
+  synopsis: A kanban foundation for coding agents
+  # fpm refuses to build a .deb without a maintainer, and derives one from
+  # `author` in package.json only when that field carries an email. Setting it
+  # explicitly keeps the deb target working regardless of how the package
+  # metadata is written.
+  maintainer: Cline <support@cline.bot>
+  target:
+    - target: AppImage
+      arch:
+        - x64
+        - arm64
+    - target: deb
+      arch:
+        - x64
+        - arm64
+  desktop:
+    entry:
+      # Without this the top-level `protocols` block registers `kanban://`
+      # on macOS and Windows but not Linux, so deep links — including the
+      # OAuth callback — would silently fail to reach the app there.
+      MimeType: x-scheme-handler/kanban;
+
+appImage:
+  artifactName: "${productName}-${version}-${arch}.${ext}"
+
+deb:
+  artifactName: "${productName}-${version}-${arch}.${ext}"
