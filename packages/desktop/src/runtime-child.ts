@@ -50,6 +50,14 @@ export interface RuntimeChildManagerOptions {
 	 */
 	maxOldSpaceMb?: number;
 	spawnFn?: typeof spawn;
+	/**
+	 * Receives every chunk of child output. Optional so tests and callers that
+	 * don't want the logs can omit it, but in the app this is what makes a
+	 * packaged startup failure diagnosable at all.
+	 */
+	onOutput?: (stream: "stdout" | "stderr", chunk: string) => void;
+	/** Called once the child exits, so a partial trailing line can be flushed. */
+	onOutputEnd?: () => void;
 }
 
 const DEFAULT_MAX_OLD_SPACE_MB = 4096;
@@ -148,6 +156,8 @@ export class RuntimeChildManager extends EventEmitter<RuntimeChildManagerEvents>
 		startupTimeoutMs: number;
 		maxOldSpaceMb: number;
 		spawnFn: typeof spawn;
+		onOutput?: (stream: "stdout" | "stderr", chunk: string) => void;
+		onOutputEnd?: () => void;
 	};
 
 	private child: ChildProcess | null = null;
@@ -164,6 +174,8 @@ export class RuntimeChildManager extends EventEmitter<RuntimeChildManagerEvents>
 			startupTimeoutMs: options.startupTimeoutMs ?? 30_000,
 			maxOldSpaceMb: options.maxOldSpaceMb ?? DEFAULT_MAX_OLD_SPACE_MB,
 			spawnFn: options.spawnFn ?? spawn,
+			onOutput: options.onOutput,
+			onOutputEnd: options.onOutputEnd,
 		};
 	}
 
@@ -256,14 +268,19 @@ export class RuntimeChildManager extends EventEmitter<RuntimeChildManagerEvents>
 		let readyEmitted = false;
 		let startupFailure: Error | null = null;
 
-		// Drain stdout so the child doesn't block on a full OS pipe buffer.
-		child.stdout?.on("data", () => {});
+		// Draining is mandatory regardless of whether anyone is listening: a
+		// full OS pipe buffer blocks the child.
+		child.stdout?.on("data", (chunk: Buffer) => {
+			this.opts.onOutput?.("stdout", chunk.toString("utf8"));
+		});
 
 		// Rolling stderr tail — sized to stay in memory for the lifetime of
 		// the subprocess and handed to the crashed listener on exit.
 		let stderrTail = "";
 		child.stderr?.on("data", (chunk: Buffer) => {
-			stderrTail += chunk.toString("utf8");
+			const text = chunk.toString("utf8");
+			this.opts.onOutput?.("stderr", text);
+			stderrTail += text;
 			if (stderrTail.length > STDERR_TAIL_MAX_BYTES) {
 				stderrTail = stderrTail.slice(-STDERR_TAIL_MAX_BYTES);
 			}
@@ -271,6 +288,7 @@ export class RuntimeChildManager extends EventEmitter<RuntimeChildManagerEvents>
 
 		child.on("exit", (code, signal) => {
 			this.child = null;
+			this.opts.onOutputEnd?.();
 			if (this.shutdownRequested) return;
 			if (!readyEmitted) {
 				const tail = stderrTail.trim();

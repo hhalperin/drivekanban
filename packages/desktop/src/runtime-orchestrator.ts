@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { existsSync } from "node:fs";
 import { powerSaveBlocker } from "electron";
 
+import { RuntimeLogBuffer } from "./logs/runtime-log-buffer.js";
 import { RuntimeChildManager } from "./runtime-child.js";
 
 
@@ -39,6 +40,13 @@ const POWER_SAVE_BLOCKER_INACTIVE = -1;
 export const KANBAN_RUNTIME_TITLE = "<title>Kanban</title>";
 
 export class RuntimeOrchestrator extends EventEmitter<RuntimeOrchestratorEventMap> {
+
+	/**
+	 * Owned here rather than by the child manager so the captured output
+	 * survives a restart — the logs from the run that just died are exactly
+	 * the ones worth reading.
+	 */
+	readonly logs = new RuntimeLogBuffer();
 
 	private manager: RuntimeChildManager | null = null;
 	private url: string | null = null;
@@ -393,6 +401,8 @@ export class RuntimeOrchestrator extends EventEmitter<RuntimeOrchestratorEventMa
 		const manager = new RuntimeChildManager({
 			cliPath: this.getValidatedShimPath(),
 			shutdownTimeoutMs: DEFAULT_CHILD_SHUTDOWN_TIMEOUT_MS,
+			onOutput: (stream, chunk) => this.logs.append(stream, chunk),
+			onOutputEnd: () => this.logs.flush(),
 		});
 
 

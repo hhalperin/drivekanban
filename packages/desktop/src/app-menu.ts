@@ -33,6 +33,7 @@ interface AppMenuOptions {
 	onNewWindow: (options: { initialPath: string | null }) => void;
 	/** Invoked when the user picks a published app action. */
 	onInvokeAction: (actionId: string) => void;
+	onShowRuntimeLogs: () => void;
 }
 
 export class AppMenu {
@@ -138,7 +139,13 @@ export class AppMenu {
 					click: () =>
 						openExternalSafe("https://github.com/cline/kanban/issues"),
 				},
-
+				{ type: "separator" },
+				{
+					// Always enabled: the logs are most wanted precisely when the
+					// runtime failed to start, which is when `ready` is false.
+					label: "Show Runtime Logs",
+					click: () => this.opts.onShowRuntimeLogs(),
+				},
 			],
 		};
 

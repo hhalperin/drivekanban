@@ -9,6 +9,7 @@ import {
 	DesktopChannel,
 } from "./bridge/contract.js";
 import { registerDesktopBridge } from "./bridge/main-bridge.js";
+import { LogWindow } from "./logs/log-window.js";
 import { createElectronNotificationBackend } from "./notifications/electron-notification-backend.js";
 import { AppTray } from "./presence/app-tray.js";
 import { createElectronPresenceView } from "./presence/electron-presence-view.js";
@@ -43,6 +44,8 @@ const trayIconPath = app.isPackaged
 	? path.join(process.resourcesPath, "icon.png")
 	: path.join(import.meta.dirname, "..", "build", "icon.png");
 const disconnectedHtmlPath = path.join(import.meta.dirname, "disconnected.html");
+const runtimeLogsHtmlPath = path.join(import.meta.dirname, "logs", "runtime-logs.html");
+const logsPreloadPath = path.join(import.meta.dirname, "logs-preload.js");
 
 // Must run before `app.whenReady()`.
 app.commandLine.appendSwitch("disable-renderer-backgrounding");
@@ -82,6 +85,13 @@ const notificationController = new NotificationController({
 	isAppFocused: () => BrowserWindow.getFocusedWindow() !== null,
 	reveal: (target) => windowFactory.revealTarget(target),
 });
+
+const logWindow = new LogWindow({
+	htmlPath: runtimeLogsHtmlPath,
+	preloadPath: logsPreloadPath,
+	logs: orchestrator.logs,
+});
+logWindow.registerIpc(ipcMain);
 
 const tray = new AppTray({
 	iconPath: trayIconPath,
@@ -145,6 +155,7 @@ const menu = new AppMenu({
 	orchestrator,
 	onNewWindow: ({ initialPath }) =>
 		windowFactory.create({ projectId: null, initialPath }),
+	onShowRuntimeLogs: () => logWindow.show(),
 	// Routed to the focused window only. Every window runs its own renderer
 	// with its own project context, and the menu belongs to whichever window
 	// the user was looking at when they opened it.
