@@ -1,5 +1,6 @@
 import { useHotkeys } from "react-hotkeys-hook";
 
+import { APP_ACTION_ACCELERATORS, AppActionId } from "@/actions/app-actions";
 import type { CardSelection } from "@/types";
 
 function isEventInsideDialog(target: EventTarget | null): boolean {
@@ -40,7 +41,7 @@ export function useAppHotkeys({
 	onStartAllTasks,
 }: UseAppHotkeysInput): void {
 	useHotkeys(
-		"mod+j",
+		APP_ACTION_ACCELERATORS[AppActionId.ToggleTerminal],
 		() => {
 			if (selectedCard) {
 				handleToggleDetailTerminal();
@@ -57,7 +58,7 @@ export function useAppHotkeys({
 	);
 
 	useHotkeys(
-		"mod+b",
+		APP_ACTION_ACCELERATORS[AppActionId.StartAllTasks],
 		onStartAllTasks,
 		{
 			enableOnContentEditable: false,
@@ -68,7 +69,7 @@ export function useAppHotkeys({
 	);
 
 	useHotkeys(
-		"mod+m",
+		APP_ACTION_ACCELERATORS[AppActionId.ToggleTerminalExpanded],
 		() => {
 			if (selectedCard) {
 				if (isDetailTerminalOpen) {
@@ -95,7 +96,7 @@ export function useAppHotkeys({
 	);
 
 	useHotkeys(
-		"c",
+		APP_ACTION_ACCELERATORS[AppActionId.CreateTask],
 		() => {
 			if (!canUseCreateTaskShortcut) {
 				return;
@@ -107,7 +108,7 @@ export function useAppHotkeys({
 	);
 
 	useHotkeys(
-		"mod+g",
+		APP_ACTION_ACCELERATORS[AppActionId.ToggleGitHistory],
 		() => {
 			handleToggleGitHistory();
 		},
@@ -120,7 +121,7 @@ export function useAppHotkeys({
 	);
 
 	useHotkeys(
-		"mod+shift+s",
+		APP_ACTION_ACCELERATORS[AppActionId.OpenSettings],
 		() => {
 			handleOpenSettings();
 		},

@@ -4,11 +4,13 @@
 import { FolderOpen } from "lucide-react";
 import type { ReactElement } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-
+import { useHotkeys } from "react-hotkeys-hook";
+import { COMMAND_PALETTE_ACCELERATOR, useAppActions } from "@/actions/app-actions";
 import { AddProjectDialog } from "@/components/add-project-dialog";
 import { notifyError, showAppToast } from "@/components/app-toaster";
 import { CardDetailView } from "@/components/card-detail-view";
 import { ClearTrashDialog } from "@/components/clear-trash-dialog";
+import { CommandPalette } from "@/components/command-palette";
 import { DebugDialog } from "@/components/debug-dialog";
 import { AgentTerminalPanel } from "@/components/detail-panels/agent-terminal-panel";
 import { GitHistoryView } from "@/components/git-history-view";
@@ -90,6 +92,7 @@ export default function App(): ReactElement {
 	const [homeSidebarSection, setHomeSidebarSection] = useState<"projects" | "agent">("projects");
 	const [isClearTrashDialogOpen, setIsClearTrashDialogOpen] = useState(false);
 	const [isGitHistoryOpen, setIsGitHistoryOpen] = useState(false);
+	const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 	const [pendingTaskStartAfterEditId, setPendingTaskStartAfterEditId] = useState<string | null>(null);
 	const taskEditorResetRef = useRef<() => void>(() => {});
 	const lastStreamErrorRef = useRef<string | null>(null);
@@ -618,6 +621,32 @@ export default function App(): ReactElement {
 		handleStartAllBacklogTasks,
 		setSelectedTaskId,
 	});
+
+	// One definition per action, shared by the keyboard layer, the command
+	// palette and (in the desktop shell) the native menu bar.
+	const appActions = useAppActions(
+		{
+			onCreateTask: handleOpenCreateTask,
+			onStartAllTasks: handleStartAllBacklogTasksFromBoard,
+			onToggleTerminal: selectedCard ? handleToggleDetailTerminal : handleToggleHomeTerminal,
+			onToggleTerminalExpanded: selectedCard ? handleToggleExpandDetailTerminal : handleToggleExpandHomeTerminal,
+			onToggleGitHistory: handleToggleGitHistory,
+			onOpenSettings: handleOpenSettings,
+		},
+		{
+			canCreateTask: !hasNoProjects && currentProjectId !== null,
+			canToggleTerminalExpanded: selectedCard ? isDetailTerminalOpen : showHomeBottomTerminal,
+		},
+	);
+
+	useHotkeys(
+		COMMAND_PALETTE_ACCELERATOR,
+		() => {
+			setIsCommandPaletteOpen((current) => !current);
+		},
+		{ enableOnFormTags: true, enableOnContentEditable: true, preventDefault: true },
+		[],
+	);
 
 	useAppHotkeys({
 		selectedCard,
@@ -1169,6 +1198,13 @@ export default function App(): ReactElement {
 					initialGitInitPath={pendingNativeGitInitPath}
 				/>
 
+				<CommandPalette
+					open={isCommandPaletteOpen}
+					actions={appActions}
+					onClose={() => {
+						setIsCommandPaletteOpen(false);
+					}}
+				/>
 				<UpdateNotificationController />
 
 				<AlertDialog
