@@ -1,0 +1,120 @@
+name: Desktop Build Check
+
+# Proves the desktop app still *packages* on every platform it ships to.
+#
+# `test.yml` typechecks and unit-tests packages/desktop but never produces an
+# artifact, and that gap has real teeth: three defects on this branch — a
+# launch-blocking ESM import, a deb target missing fpm metadata, and a Linux
+# executable named after the scoped npm package — passed typecheck and every
+# unit test, and were only found by building and launching a packaged app.
+#
+# Separate from `desktop-release.yml` on purpose. That workflow is tag-driven,
+# holds `contents: write`, and carries signing secrets; running it per-PR would
+# be both over-privileged and unable to build a branch. This one is read-only,
+# builds unsigned, and never publishes.
+
+on:
+  pull_request:
+    # Gated on paths because a full three-platform Electron build is expensive
+    # and most PRs cannot affect it. Includes the root build inputs, since the
+    # desktop bundle stages `dist/` from them.
+    paths:
+      - "packages/desktop/**"
+      - "web-ui/**"
+      - "src/**"
+      - "scripts/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/desktop-build-check.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-build-check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      # One platform failing to package should not hide whether the others do.
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS
+            build_args: --mac
+          - os: windows-latest
+            name: Windows
+            build_args: --win
+          - os: ubuntu-latest
+            name: Linux
+            build_args: --linux
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: npm
+
+      # node-gyp still reaches for distutils, which 3.12 removed.
+      - name: Setup Python (for node-gyp)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install web-ui dependencies
+        run: npm ci --prefix web-ui
+
+      - name: Install desktop dependencies
+        run: npm ci --prefix packages/desktop
+
+      # Produces dist/cli.js plus dist/web-ui, which `stage:cli` copies into the
+      # app bundle. The desktop build fails loudly if this is skipped.
+      - name: Build runtime and web UI
+        run: npm run build
+
+      - name: Package desktop app (unsigned)
+        working-directory: packages/desktop
+        shell: bash
+        # No signing secrets are passed: this job proves the packaging config
+        # is sound, and electron-builder falls back to an unsigned build. That
+        # also keeps the job runnable on forks.
+        run: |
+          npm run stage:cli
+          npm run build:ts
+          npx electron-builder ${{ matrix.build_args }} \
+            --config electron-builder.yml \
+            --publish never
+
+      # Listed explicitly so a target that silently produced nothing is visible
+      # in the log rather than only as an empty artifact.
+      - name: List produced artifacts
+        working-directory: packages/desktop
+        shell: bash
+        run: ls -lh out/ || true
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kanban-desktop-${{ matrix.name }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            packages/desktop/out/*.dmg
+            packages/desktop/out/*.zip
+            packages/desktop/out/*.exe
+            packages/desktop/out/*.AppImage
+            packages/desktop/out/*.deb
+            packages/desktop/out/*.yml
