@@ -24,9 +24,16 @@ afterEach(() => {
 
 describe("parseDesktopSettings", () => {
 	it("reads a well-formed object", () => {
-		expect(parseDesktopSettings({ runtimeHost: "localhost", runtimePort: 4000 })).toEqual({
+		expect(
+			parseDesktopSettings({
+				runtimeHost: "localhost",
+				runtimePort: 4000,
+				summonAccelerator: "CmdOrCtrl+Alt+K",
+			}),
+		).toEqual({
 			runtimeHost: "localhost",
 			runtimePort: 4000,
+			summonAccelerator: "CmdOrCtrl+Alt+K",
 		});
 	});
 
@@ -44,6 +51,7 @@ describe("parseDesktopSettings", () => {
 		expect(parseDesktopSettings({ runtimeHost: "example.internal", runtimePort: "x" })).toEqual({
 			runtimeHost: "example.internal",
 			runtimePort: DEFAULT_DESKTOP_SETTINGS.runtimePort,
+			summonAccelerator: DEFAULT_DESKTOP_SETTINGS.summonAccelerator,
 		});
 	});
 
@@ -74,6 +82,18 @@ describe("parseDesktopSettings", () => {
 		);
 	});
 
+	it("keeps an empty summon accelerator as a deliberate opt-out", () => {
+		// Falling back to the default here would re-enable a shortcut the user
+		// explicitly turned off, every launch.
+		expect(parseDesktopSettings({ summonAccelerator: "" }).summonAccelerator).toBe("");
+	});
+
+	it("falls back for a non-string summon accelerator", () => {
+		expect(parseDesktopSettings({ summonAccelerator: 42 }).summonAccelerator).toBe(
+			DEFAULT_DESKTOP_SETTINGS.summonAccelerator,
+		);
+	});
+
 	it("accepts a bracketed IPv6 literal", () => {
 		expect(parseDesktopSettings({ runtimeHost: "[::1]" }).runtimeHost).toBe("[::1]");
 	});
@@ -91,12 +111,14 @@ describe("loadDesktopSettings", () => {
 	});
 
 	it("round-trips through save", () => {
-		saveDesktopSettings(dir, { runtimeHost: "localhost", runtimePort: 5555 });
-
-		expect(loadDesktopSettings(dir)).toEqual({
+		const settings = {
 			runtimeHost: "localhost",
 			runtimePort: 5555,
-		});
+			summonAccelerator: "CmdOrCtrl+Alt+K",
+		};
+		saveDesktopSettings(dir, settings);
+
+		expect(loadDesktopSettings(dir)).toEqual(settings);
 	});
 
 	it("falls back to defaults on unparseable JSON", () => {

@@ -105,6 +105,16 @@ export class WindowRegistry {
 			window.show();
 		});
 
+		// Applied per navigation, not once: Electron resets zoom on every
+		// load, so a restored level would be lost the moment the runtime URL
+		// arrives — which is always after the window is created.
+		const restoredZoom = savedState?.zoomLevel;
+		if (restoredZoom !== undefined && restoredZoom !== 0) {
+			window.webContents.on("did-finish-load", () => {
+				window.webContents.setZoomLevel(restoredZoom);
+			});
+		}
+
 		window.on("focus", () => {
 			this.lastFocusedId = window.id;
 			options.onWindowFocused?.(window.id);
@@ -311,6 +321,7 @@ export class WindowRegistry {
 				width: bounds.width,
 				height: bounds.height,
 				isMaximized,
+				zoomLevel: entry.window.webContents.getZoomLevel(),
 				projectId: entry.projectId,
 				lastViewedPath: entry.lastViewedPath,
 			});

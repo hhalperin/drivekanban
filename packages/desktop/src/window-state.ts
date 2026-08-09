@@ -7,6 +7,12 @@ export interface WindowState {
 	width: number;
 	height: number;
 	isMaximized: boolean;
+	/**
+	 * Electron zoom level (0 = 100%, each step ~20%). Persisted because the
+	 * View menu offers zoom and resetting it every launch makes the setting
+	 * feel broken — especially for users who zoom out to fit more columns.
+	 */
+	zoomLevel?: number;
 }
 
 export interface PersistedWindowState extends WindowState {
@@ -58,6 +64,11 @@ export function clampBoundsToDisplays<T extends WindowState>(
 }
 
 
+/** Roughly 20% to 500%, matching what the View menu can reach. */
+export function isUsableZoomLevel(value: unknown): value is number {
+	return typeof value === "number" && Number.isFinite(value) && value >= -8 && value <= 9;
+}
+
 function parseWindowState(parsed: Record<string, unknown>): WindowState | undefined {
 	if (
 		typeof parsed.width !== "number" ||
@@ -72,6 +83,9 @@ function parseWindowState(parsed: Record<string, unknown>): WindowState | undefi
 		width: parsed.width,
 		height: parsed.height,
 		isMaximized: parsed.isMaximized,
+		// Clamped to Electron's usable range: a hand-edited extreme would
+		// render the UI unusable with no in-app way back.
+		zoomLevel: isUsableZoomLevel(parsed.zoomLevel) ? parsed.zoomLevel : undefined,
 	};
 }
 

@@ -1,4 +1,11 @@
-import { BrowserWindow, app, dialog, ipcMain, powerMonitor } from "electron";
+import {
+	BrowserWindow,
+	app,
+	dialog,
+	globalShortcut,
+	ipcMain,
+	powerMonitor,
+} from "electron";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
@@ -10,6 +17,7 @@ import {
 } from "./bridge/contract.js";
 import { registerDesktopBridge } from "./bridge/main-bridge.js";
 import { loadDesktopSettings } from "./settings/desktop-settings.js";
+import { GlobalShortcuts } from "./shortcuts/global-shortcuts.js";
 import { LogWindow } from "./logs/log-window.js";
 import { createElectronNotificationBackend } from "./notifications/electron-notification-backend.js";
 import { AppTray } from "./presence/app-tray.js";
@@ -99,17 +107,24 @@ logWindow.registerIpc(ipcMain);
 
 const tray = new AppTray({
 	iconPath: trayIconPath,
-	onShowKanban: () => {
-		const focused = registry.getFocused();
-		if (focused && !focused.isDestroyed()) {
-			if (focused.isMinimized()) focused.restore();
-			focused.show();
-			focused.focus();
-			return;
-		}
-		windowFactory.create();
-	},
+	onShowKanban: () => summonKanban(),
 	onQuit: () => app.quit(),
+});
+
+function summonKanban(): void {
+	const focused = registry.getFocused();
+	if (focused && !focused.isDestroyed()) {
+		if (focused.isMinimized()) focused.restore();
+		focused.show();
+		focused.focus();
+		return;
+	}
+	windowFactory.create();
+}
+
+const globalShortcuts = new GlobalShortcuts({
+	globalShortcut,
+	onSummon: summonKanban,
 });
 
 const presenceController = new PresenceController(
@@ -415,6 +430,9 @@ function wireAppLifecycle(): void {
 
 		menu.rebuild();
 		tray.start();
+		if (settings.summonAccelerator) {
+			globalShortcuts.register(settings.summonAccelerator);
+		}
 		orchestrator.startAppNapPrevention();
 
 		// Check once at startup, then on a timer. The timer is the load-bearing
@@ -499,6 +517,9 @@ function wireAppLifecycle(): void {
 
 		isQuitting = true;
 		tray.destroy();
+		// A global shortcut outlives the process on some platforms; leaving it
+		// held would make the combo dead for every other app until reboot.
+		globalShortcuts.unregister();
 
 		registry.saveAllStates(app.getPath("userData"));
 

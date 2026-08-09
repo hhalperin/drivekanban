@@ -13,16 +13,25 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { DEFAULT_SUMMON_ACCELERATOR } from "../shortcuts/global-shortcuts.js";
+
 export interface DesktopSettings {
 	/** Host the shell expects the runtime on. */
 	runtimeHost: string;
 	/** Port the shell expects the runtime on. */
 	runtimePort: number;
+	/**
+	 * System-wide accelerator that summons the app, in Electron syntax. Empty
+	 * disables it — a user whose muscle memory belongs to another app should
+	 * be able to turn this off rather than fight over the combo.
+	 */
+	summonAccelerator: string;
 }
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
 	runtimeHost: "127.0.0.1",
 	runtimePort: 3484,
+	summonAccelerator: DEFAULT_SUMMON_ACCELERATOR,
 };
 
 export function resolveSettingsPath(userDataPath: string): string {
@@ -70,6 +79,12 @@ export function parseDesktopSettings(raw: unknown): DesktopSettings {
 		runtimePort: isValidPort(record.runtimePort)
 			? record.runtimePort
 			: DEFAULT_DESKTOP_SETTINGS.runtimePort,
+		// An explicit empty string is a real choice (disabled), so it is kept
+		// rather than falling back to the default.
+		summonAccelerator:
+			typeof record.summonAccelerator === "string"
+				? record.summonAccelerator.trim()
+				: DEFAULT_DESKTOP_SETTINGS.summonAccelerator,
 	};
 }
 

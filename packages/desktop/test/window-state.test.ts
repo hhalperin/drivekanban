@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -8,6 +9,7 @@ import {
 	clampBoundsToDisplays,
 	extractPersistablePath,
 	isPersistableRuntimePath,
+	isUsableZoomLevel,
 	loadAllWindowStates,
 	resolveMultiWindowStatePath,
 	saveAllWindowStates,
@@ -585,5 +587,64 @@ describe("loadAllWindowStates respects MAX_RESTORED_WINDOWS", () => {
 			"utf-8",
 		);
 		expect(loadAllWindowStates(tmpDir).length).toBe(5);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Zoom level persistence. The View menu offers zoom, so resetting it on every
+// launch makes the setting feel broken — particularly for users who zoom out
+// to fit more board columns on screen.
+// ---------------------------------------------------------------------------
+
+describe("zoom level", () => {
+	it("round-trips a saved zoom level", () => {
+		const dir = mkdtempSync(path.join(tmpdir(), "kanban-zoom-"));
+		try {
+			saveAllWindowStates(dir, [
+				{
+					x: 0,
+					y: 0,
+					width: 1400,
+					height: 900,
+					isMaximized: false,
+					zoomLevel: -2,
+					projectId: null,
+				},
+			]);
+
+			expect(loadAllWindowStates(dir)[0]?.zoomLevel).toBe(-2);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it.each([
+		["far too small", -50],
+		["far too large", 100],
+		["not a number", "big"],
+		["NaN", Number.NaN],
+	])("drops a %s zoom level", (_label, zoomLevel) => {
+		// A hand-edited extreme would render the UI unusable with no in-app
+		// way back to a readable size.
+		const dir = mkdtempSync(path.join(tmpdir(), "kanban-zoom-"));
+		try {
+			writeFileSync(
+				resolveMultiWindowStatePath(dir),
+				JSON.stringify([
+					{ x: 0, y: 0, width: 1400, height: 900, isMaximized: false, zoomLevel, projectId: null },
+				]),
+				"utf-8",
+			);
+
+			expect(loadAllWindowStates(dir)[0]?.zoomLevel).toBeUndefined();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("accepts a state with no zoom level at all", () => {
+		// Windows saved by an older build have none.
+		expect(isUsableZoomLevel(undefined)).toBe(false);
+		expect(isUsableZoomLevel(0)).toBe(true);
 	});
 });
