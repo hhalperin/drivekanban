@@ -1,4 +1,4 @@
-import { BrowserWindow, app, dialog, ipcMain } from "electron";
+import { BrowserWindow, app, dialog, ipcMain, powerMonitor } from "electron";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
@@ -9,6 +9,7 @@ import {
 	DesktopChannel,
 } from "./bridge/contract.js";
 import { registerDesktopBridge } from "./bridge/main-bridge.js";
+import { loadDesktopSettings } from "./settings/desktop-settings.js";
 import { LogWindow } from "./logs/log-window.js";
 import { createElectronNotificationBackend } from "./notifications/electron-notification-backend.js";
 import { AppTray } from "./presence/app-tray.js";
@@ -34,8 +35,6 @@ import { WindowFactory } from "./window-factory.js";
 import { WindowRegistry } from "./window-registry.js";
 
 const BACKGROUND_COLOR = "#1F2428";
-const DEFAULT_HOST = "127.0.0.1";
-const DEFAULT_PORT = 3484;
 const HEALTH_TIMEOUT_MS = 3_000;
 const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
 
@@ -60,9 +59,14 @@ let isQuitting = false;
 
 const registry = new WindowRegistry();
 
+// Read before `app.whenReady()` so the orchestrator is configured on first
+// connect. `getPath("userData")` is valid this early; only creating the
+// directory has to wait.
+const settings = loadDesktopSettings(app.getPath("userData"));
+
 const orchestrator = new RuntimeOrchestrator({
-	host: DEFAULT_HOST,
-	port: DEFAULT_PORT,
+	host: settings.runtimeHost,
+	port: settings.runtimePort,
 	healthTimeoutMs: HEALTH_TIMEOUT_MS,
 	resolveCliShimPath,
 });
@@ -422,6 +426,15 @@ function wireAppLifecycle(): void {
 			() => updateController.check(),
 			UPDATE_CHECK_INTERVAL_MS,
 		).unref();
+
+		// A laptop that slept overnight comes back with timers that may not
+		// have fired and a runtime that may not have survived. Re-probe at
+		// once rather than showing a stale window until the next tick.
+		powerMonitor.on("resume", () => {
+			console.log("[desktop] System resumed — re-probing the runtime.");
+			orchestrator.onSystemResume();
+			updateController.check();
+		});
 
 		// Register before the async connect() — otherwise a macOS Dock click
 		// during the initial health-check window (up to `HEALTH_TIMEOUT_MS`)

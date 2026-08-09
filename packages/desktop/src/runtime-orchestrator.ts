@@ -292,6 +292,30 @@ export class RuntimeOrchestrator extends EventEmitter<RuntimeOrchestratorEventMa
 	}
 
 
+	/**
+	 * Re-arm health monitoring after the machine wakes.
+	 *
+	 * Timers survive sleep, but their next tick can be delayed by however long
+	 * the lid was shut, and the runtime child may not have survived at all.
+	 * Restarting the active probe forces a fresh check immediately instead of
+	 * showing a stale window until the timer catches up. Restarting also
+	 * clears the accumulated failure count, so probes that "failed" while the
+	 * machine was suspended cannot tip the crash threshold on their own.
+	 */
+	onSystemResume(): void {
+		if (this.terminated) return;
+		if (this.attachedProbeTimer) {
+			const origin = this.url ?? this.lastKnownOrigin;
+			if (origin) {
+				this.startAttachedProbe(origin);
+				return;
+			}
+		}
+		if (this.recoveryProbeTimer) {
+			this.startRecoveryProbe();
+		}
+	}
+
 	startAppNapPrevention(): void {
 		if (this.powerSaveBlockerId !== POWER_SAVE_BLOCKER_INACTIVE) return;
 		this.powerSaveBlockerId = powerSaveBlocker.start("prevent-app-suspension");
