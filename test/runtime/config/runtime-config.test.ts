@@ -20,7 +20,8 @@ import { createTempDir } from "../../utilities/temp-dir";
 // superset of it, so one reader covers both.
 const SETTINGS_DIR_SEGMENTS = [".cline", "kanban"] as const;
 
-function resolveSettingsFile(root: string): string | null {
+/** The existing settings file, or null when none has been written yet. */
+function findSettingsFile(root: string): string | null {
 	for (const filename of ["settings.yaml", "config.json"]) {
 		const candidate = join(root, ...SETTINGS_DIR_SEGMENTS, filename);
 		if (existsSync(candidate)) {
@@ -30,12 +31,28 @@ function resolveSettingsFile(root: string): string | null {
 	return null;
 }
 
+/**
+ * The path settings *would* use, mirroring `resolveSettingsPathInDir` in
+ * production: an existing file if there is one, otherwise the YAML path a write
+ * would create.
+ *
+ * This is deliberately distinct from `findSettingsFile`. `globalConfigPath` is
+ * always populated, including before anything has been persisted, so comparing
+ * it against a helper that returns null on a fresh home fails only where no
+ * config gets written — which is CI, where no agent binaries are installed and
+ * so auto-selection never persists anything. That is exactly how this was missed
+ * locally.
+ */
+function settingsPathFor(root: string): string {
+	return findSettingsFile(root) ?? join(root, ...SETTINGS_DIR_SEGMENTS, "settings.yaml");
+}
+
 function settingsFileExists(root: string): boolean {
-	return resolveSettingsFile(root) !== null;
+	return findSettingsFile(root) !== null;
 }
 
 function readSettings<T>(root: string): T {
-	const path = resolveSettingsFile(root);
+	const path = findSettingsFile(root);
 	if (!path) {
 		throw new Error(`No settings file under ${root}`);
 	}
@@ -195,7 +212,7 @@ describe.sequential("runtime-config auto agent selection", () => {
 		try {
 			await withTemporaryEnv({ home: tempHome }, async () => {
 				const state = await loadRuntimeConfig(tempHome);
-				expect(state.globalConfigPath).toBe(resolveSettingsFile(tempHome));
+				expect(state.globalConfigPath).toBe(settingsPathFor(tempHome));
 				expect(state.projectConfigPath).toBeNull();
 				expect(state.shortcuts).toEqual([]);
 
@@ -223,7 +240,7 @@ describe.sequential("runtime-config auto agent selection", () => {
 		try {
 			await withTemporaryEnv({ home: tempHome }, async () => {
 				const state = await loadGlobalRuntimeConfig();
-				expect(state.globalConfigPath).toBe(resolveSettingsFile(tempHome));
+				expect(state.globalConfigPath).toBe(settingsPathFor(tempHome));
 				expect(state.projectConfigPath).toBeNull();
 				expect(state.shortcuts).toEqual([]);
 			});
@@ -501,7 +518,7 @@ describe("settings file format", () => {
 			await withTemporaryEnv({ home: tempHome }, async () => {
 				await updateRuntimeConfig(tempHome, { selectedAgentId: "codex" });
 
-				const written = resolveSettingsFile(tempHome);
+				const written = findSettingsFile(tempHome);
 				expect(written).toBe(join(tempHome, ".cline", "kanban", "settings.yaml"));
 				expect(existsSync(join(tempHome, ".cline", "kanban", "config.json"))).toBe(false);
 
